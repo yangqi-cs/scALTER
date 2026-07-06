@@ -46,9 +46,9 @@ TE_ANNOTATION_GTF = None
 
 # Output directories
 OUTPUT_DIR = None
-# None = /qiyang/GitHub/scALTER/results/_tmp_counts
+# None = /qiyang/GitHub/scALTER/results/tmp/counts
 TMP_DIR = None
-# None = <OUTPUT_DIR>/_tmp_bedtools
+# None = /qiyang/GitHub/scALTER/results/tmp/bedtools for the default output
 
 # Tool paths
 DEFAULT_ENV_BIN = None
@@ -78,7 +78,14 @@ CANONICAL_GTF_TO_BED = False
 
 
 def default_output_dir():
-    return "/qiyang/GitHub/scALTER/results/_tmp_counts"
+    return "/qiyang/GitHub/scALTER/results/tmp/counts"
+
+
+def default_tmp_dir(output_dir):
+    output_dir = os.path.abspath(output_dir)
+    if os.path.basename(output_dir) == "counts" and os.path.basename(os.path.dirname(output_dir)) == "tmp":
+        return os.path.join(os.path.dirname(output_dir), "bedtools")
+    return os.path.join(output_dir, "_tmp_bedtools")
 
 
 def resolve_tool(name, explicit=None):
@@ -121,6 +128,29 @@ def parse_gene_id(attrs):
     return None
 
 
+def map_gtf_chrom_to_bam(chrom, valid_chroms):
+    if chrom in valid_chroms:
+        return chrom
+
+    candidates = []
+    if chrom.startswith("chr"):
+        bare = chrom[3:]
+        candidates.append(bare)
+        if bare == "M":
+            candidates.append("MT")
+    else:
+        candidates.append(f"chr{chrom}")
+        if chrom == "MT":
+            candidates.append("chrM")
+        elif chrom == "M":
+            candidates.extend(["MT", "chrM"])
+
+    for candidate in candidates:
+        if candidate in valid_chroms:
+            return candidate
+    return None
+
+
 def write_te_beds(gtf_file, valid_chroms, bed_dir, preserve_original_coords=True):
     """
     Write one sorted BED4 file per chromosome.
@@ -141,7 +171,8 @@ def write_te_beds(gtf_file, valid_chroms, bed_dir, preserve_original_coords=True
             if len(fields) < 9:
                 continue
             chrom, feature_type = fields[0], fields[2]
-            if chrom not in valid_chroms or feature_type != "repeat_region":
+            bam_chrom = map_gtf_chrom_to_bam(chrom, valid_chroms)
+            if bam_chrom is None or feature_type != "repeat_region":
                 continue
             gene_id = parse_gene_id(fields[8])
             if not gene_id:
@@ -157,7 +188,7 @@ def write_te_beds(gtf_file, valid_chroms, bed_dir, preserve_original_coords=True
                 bed_end = gtf_end
 
             if bed_start < bed_end:
-                per_chrom[chrom].append((bed_start, bed_end, gene_id))
+                per_chrom[bam_chrom].append((bed_start, bed_end, gene_id))
 
     bed_files = {}
     total_intervals = 0
@@ -534,12 +565,12 @@ def build_arg_parser():
     parser.add_argument(
         "--output-dir",
         default=OUTPUT_DIR,
-        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/_tmp_counts when OUTPUT_DIR is None",
+        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/tmp/counts when OUTPUT_DIR is None",
     )
     parser.add_argument(
         "--tmp-dir",
         default=TMP_DIR,
-        help="Default: TMP_DIR, or <output-dir>/_tmp_bedtools when TMP_DIR is None",
+        help="Default: TMP_DIR, or /qiyang/GitHub/scALTER/results/tmp/bedtools for the default output.",
     )
     parser.add_argument("--samtools", default=SAMTOOLS)
     parser.add_argument("--bedtools", default=BEDTOOLS)
@@ -581,7 +612,7 @@ def main():
     gtf_file = args.te_annotation_gtf
     output_dir = args.output_dir or default_output_dir()
 
-    tmp_dir = args.tmp_dir or os.path.join(output_dir, "_tmp_bedtools")
+    tmp_dir = args.tmp_dir or default_tmp_dir(output_dir)
     bed_dir = os.path.join(tmp_dir, "te_bed")
     hit_root = os.path.join(tmp_dir, "hits")
     os.makedirs(output_dir, exist_ok=True)
@@ -600,13 +631,7 @@ def main():
     print(f"GTF:             {gtf_file}")
     print(f"Output dir:      {output_dir}")
     print(f"Temporary dir:   {tmp_dir}")
-    print(f"samtools:        {samtools}")
-    print(f"bedtools:        {bedtools}")
-    print(f"awk:             {awk}")
     print(f"Threads:         {threads}")
-    print(f"Reducer threads: {reducer_threads}")
-    print(f"TE level:        {TE_LEVEL}")
-    print(f"Coordinate mode: {'canonical' if args.canonical_gtf_to_bed else 'preserve-original'}")
     print()
 
     for path in (args.bam, args.whitelist, gtf_file):
@@ -666,7 +691,11 @@ def main():
 
     chroms = [chrom for chrom in chrom_order if chrom in bed_files]
     if not chroms:
-        raise RuntimeError("No shared chromosomes between BAM and TE GTF.")
+        raise RuntimeError(
+            "No TE intervals matched the BAM reference names. Check whether the "
+            "BAM and TE GTF use compatible chromosome names and whether the GTF "
+            "contains repeat_region features with gene_id attributes."
+        )
 
     task_args = []
     sample_hit_files = defaultdict(list)
@@ -744,7 +773,6 @@ def main():
         print("Use --reuse-hits to reuse them for a reduction-only rerun.")
     else:
         shutil.rmtree(tmp_dir, ignore_errors=True)
-        print(f"Removed temporary directory: {tmp_dir}")
 
 
 if __name__ == "__main__":

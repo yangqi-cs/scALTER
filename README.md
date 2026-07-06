@@ -101,6 +101,8 @@ By default, scALTER writes results under:
 /qiyang/GitHub/scALTER/results/
 ```
 
+Temporary count and overlap files are written under `results/tmp/` during the run.
+
 The main output files include:
 
 ```text

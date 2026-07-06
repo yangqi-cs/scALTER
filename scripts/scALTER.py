@@ -3,9 +3,9 @@
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 
@@ -168,6 +168,9 @@ def main():
     model_dir = result_root / "model"
     recon_dir = result_root / "recon_exp"
     latent_dir = result_root / "latent"
+    tmp_root = result_root / "tmp"
+    count_tmp_dir = tmp_root / "counts"
+    bedtools_tmp_dir = Path(args.tmp_dir) if args.tmp_dir else tmp_root / "bedtools"
 
     if args.skip_counts and not args.skip_views:
         raise ValueError(
@@ -178,42 +181,49 @@ def main():
     if not args.skip_counts:
         validate_input_files(args)
 
-    with tempfile.TemporaryDirectory(prefix="scalter_counts_") as count_tmp:
-        count_tmp_dir = Path(count_tmp)
+    if not args.skip_counts:
+        tmp_root.mkdir(parents=True, exist_ok=True)
+        if count_tmp_dir.exists():
+            shutil.rmtree(count_tmp_dir)
+        count_tmp_dir.mkdir(parents=True, exist_ok=True)
+        if args.tmp_dir is None and bedtools_tmp_dir.exists() and not args.reuse_hits:
+            shutil.rmtree(bedtools_tmp_dir)
 
-        if not args.skip_counts:
-            cmd = [
-                args.python,
-                str_path(script_dir / "extract_counts.py"),
-                "--bam", args.bam,
-                "--whitelist", args.whitelist,
-                "--te-annotation-gtf", args.te_annotation_gtf,
-                "--output-dir", str_path(count_tmp_dir),
-                "--cell-tag", args.cell_tag,
-                "--umi-tag", args.umi_tag,
-                "--min-mapq", str(args.min_mapq),
-                "--threads", str(args.threads),
-                "--reducer-threads", str(args.reducer_threads),
-            ]
-            add_optional(cmd, "--tmp-dir", args.tmp_dir)
-            add_optional(cmd, "--samtools", args.samtools)
-            add_optional(cmd, "--bedtools", args.bedtools)
-            add_optional(cmd, "--awk", args.awk)
-            add_bool(cmd, "--no-skip-existing", args.overwrite_counts)
-            add_bool(cmd, "--reuse-hits", args.reuse_hits)
-            add_bool(cmd, "--keep-tmp", args.keep_count_tmp)
-            add_bool(cmd, "--canonical-gtf-to-bed", args.canonical_gtf_to_bed)
-            run_step("Step 1/3: extracting unique and multi counts", cmd)
+        cmd = [
+            args.python,
+            str_path(script_dir / "extract_counts.py"),
+            "--bam", args.bam,
+            "--whitelist", args.whitelist,
+            "--te-annotation-gtf", args.te_annotation_gtf,
+            "--output-dir", str_path(count_tmp_dir),
+            "--tmp-dir", str_path(bedtools_tmp_dir),
+            "--cell-tag", args.cell_tag,
+            "--umi-tag", args.umi_tag,
+            "--min-mapq", str(args.min_mapq),
+            "--threads", str(args.threads),
+            "--reducer-threads", str(args.reducer_threads),
+        ]
+        add_optional(cmd, "--samtools", args.samtools)
+        add_optional(cmd, "--bedtools", args.bedtools)
+        add_optional(cmd, "--awk", args.awk)
+        add_bool(cmd, "--no-skip-existing", args.overwrite_counts)
+        add_bool(cmd, "--reuse-hits", args.reuse_hits)
+        add_bool(cmd, "--keep-tmp", args.keep_count_tmp)
+        add_bool(cmd, "--canonical-gtf-to-bed", args.canonical_gtf_to_bed)
+        run_step("Step 1/3: extracting unique and multi counts", cmd)
 
-        if not args.skip_views:
-            cmd = [
-                args.python,
-                str_path(script_dir / "build_views.py"),
-                "--input-dir", str_path(count_tmp_dir),
-                "--output-dir", str_path(raw_exp_dir),
-                "--align-mode", args.align_mode,
-            ]
-            run_step("Step 2/3: building aligned input views", cmd)
+    if not args.skip_views:
+        cmd = [
+            args.python,
+            str_path(script_dir / "build_views.py"),
+            "--input-dir", str_path(count_tmp_dir),
+            "--output-dir", str_path(raw_exp_dir),
+            "--align-mode", args.align_mode,
+        ]
+        run_step("Step 2/3: building aligned input views", cmd)
+
+    if not args.keep_count_tmp and count_tmp_dir.exists():
+        shutil.rmtree(count_tmp_dir)
 
     if not args.skip_model:
         cmd = [
