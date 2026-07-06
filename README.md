@@ -3,7 +3,11 @@
 ## Introduction
 scALTER is a framework for single-cell TE expression reconstruction and latent representation learning.
 
-The workflow figure is available here: [figures/workflow.pdf](figures/workflow.pdf).
+<div align="center">
+<img src="figures/workflow.png" width="90%">
+</div>
+
+The workflow figure is also available as a PDF: [figures/workflow.pdf](figures/workflow.pdf).
 
 ## Installation
 Follow the steps below to set up scALTER:
