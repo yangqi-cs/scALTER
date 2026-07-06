@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 
-DEFAULT_PYTHON = "/qiyang/Anaconda/conda/envs/teexp/bin/python"
-DEFAULT_RESULT_ROOT = "/qiyang/GitHub/scALTER/results/pbmc8k"
+DEFAULT_PYTHON = sys.executable
+DEFAULT_RESULT_ROOT = "/qiyang/GitHub/scALTER/results"
 
 
 def str_path(path):
@@ -34,33 +34,90 @@ def run_step(step_name, cmd):
     subprocess.run(cmd, check=True)
 
 
+def validate_input_files(args):
+    bam = Path(args.bam)
+    whitelist = Path(args.whitelist)
+    te_gtf = Path(args.te_annotation_gtf)
+
+    if bam.suffix.lower() != ".bam":
+        raise ValueError(f"--bam must point to a .bam file: {bam}")
+    if not bam.exists():
+        raise FileNotFoundError(f"BAM file does not exist: {bam}")
+    if not whitelist.exists():
+        raise FileNotFoundError(f"Whitelist file does not exist: {whitelist}")
+    if not (
+        str(te_gtf).endswith(".gtf")
+        or str(te_gtf).endswith(".gtf.gz")
+    ):
+        raise ValueError(f"--te-annotation-gtf must point to a .gtf or .gtf.gz file: {te_gtf}")
+    if not te_gtf.exists():
+        raise FileNotFoundError(f"TE annotation GTF does not exist: {te_gtf}")
+
+    try:
+        import pysam
+    except ImportError as exc:
+        raise ImportError(
+            "pysam is required to validate BAM files before running scALTER."
+        ) from exc
+
+    found_cell_tag = False
+    found_umi_tag = False
+    inspected = 0
+    max_reads = 100000
+    with pysam.AlignmentFile(str(bam), "rb") as bam_file:
+        for read in bam_file.fetch(until_eof=True):
+            if read.is_unmapped:
+                continue
+            inspected += 1
+            found_cell_tag = found_cell_tag or read.has_tag(args.cell_tag)
+            found_umi_tag = found_umi_tag or read.has_tag(args.umi_tag)
+            if found_cell_tag and found_umi_tag:
+                break
+            if inspected >= max_reads:
+                break
+
+    if inspected == 0:
+        raise ValueError(f"No mapped reads were found while checking BAM: {bam}")
+    missing = []
+    if not found_cell_tag:
+        missing.append(args.cell_tag)
+    if not found_umi_tag:
+        missing.append(args.umi_tag)
+    if missing:
+        raise ValueError(
+            "Could not find required BAM tag(s) in the first "
+            f"{inspected} mapped reads: {', '.join(missing)}"
+        )
+
+
 def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Run the scALTER count extraction, view construction, and model training pipeline."
     )
 
     parser.add_argument("--python", default=DEFAULT_PYTHON, help="Python executable used for all steps.")
-    parser.add_argument("--result-root", default=DEFAULT_RESULT_ROOT)
-    parser.add_argument("--base-dir", default=None, help="Default: <result-root>/my_<te-level>.")
-    parser.add_argument("--te-level", choices=["subfamily", "locus"], default="subfamily")
-    parser.add_argument("--sample-prefix", default="pbmc8k")
+    parser.add_argument(
+        "--result-root",
+        default=DEFAULT_RESULT_ROOT,
+        help="Root output directory. scALTER writes counts/, views/, and model/ under this path.",
+    )
 
     parser.add_argument(
         "--bam",
-        default="/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Aligned.sortedByCoord.out.bam",
+        required=True,
+        help="Input alignment file in BAM format.",
     )
     parser.add_argument(
         "--whitelist",
-        default="/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Solo.out/Gene/filtered/barcodes.tsv",
+        required=True,
+        help="Cell barcode whitelist, usually the filtered 10x barcodes.tsv file.",
     )
     parser.add_argument(
-        "--gtf-file",
-        default="/qiyang/TEexp/Data/dataset_human/hg38/hg38_TE_subfamily.exclusive.gtf",
+        "--te-annotation-gtf",
+        required=True,
+        help="TE annotation file in GTF format.",
     )
 
-    parser.add_argument("--counts-dir", default=None, help="Default: <base-dir>/counts.")
-    parser.add_argument("--views-dir", default=None, help="Default: <base-dir>/views.")
-    parser.add_argument("--model-dir", default=None, help="Default: <base-dir>/model.")
     parser.add_argument("--tmp-dir", default=None)
 
     parser.add_argument("--samtools", default=None)
@@ -68,9 +125,10 @@ def build_arg_parser():
     parser.add_argument("--awk", default=None)
     parser.add_argument("--cell-tag", default="CB")
     parser.add_argument("--umi-tag", default="UB")
+    parser.add_argument("--sample-prefix", default="scalter")
     parser.add_argument("--min-mapq", type=int, default=0)
-    parser.add_argument("--workers", type=int, default=32)
-    parser.add_argument("--reducer-workers", type=int, default=1)
+    parser.add_argument("--threads", type=int, default=32)
+    parser.add_argument("--reducer-threads", type=int, default=1)
     parser.add_argument("--overwrite-counts", action="store_true")
     parser.add_argument("--reuse-hits", action="store_true")
     parser.add_argument("--keep-count-tmp", action="store_true")
@@ -78,11 +136,11 @@ def build_arg_parser():
 
     parser.add_argument("--align-mode", choices=["union", "intersection"], default="union")
 
+    parser.add_argument("--count-likelihood", choices=["nb", "zinb"], default="nb")
     parser.add_argument("--n-hidden", type=int, default=128)
     parser.add_argument("--n-latent", type=int, default=32)
     parser.add_argument("--n-layers", type=int, default=1)
     parser.add_argument("--dropout-rate", type=float, default=0.0)
-    parser.add_argument("--gene-likelihood", choices=["nb", "zinb"], default="nb")
     parser.add_argument("--kl-weight", type=float, default=0.00001)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--batch-size", type=int, default=128)
@@ -105,26 +163,28 @@ def main():
     args = build_arg_parser().parse_args()
 
     script_dir = Path(__file__).resolve().parent
-    base_dir = Path(args.base_dir or os.path.join(args.result_root, f"my_{args.te_level}"))
-    counts_dir = Path(args.counts_dir or base_dir / "counts")
-    views_dir = Path(args.views_dir or base_dir / "views")
-    model_dir = Path(args.model_dir or base_dir / "model")
+    result_root = Path(args.result_root)
+    counts_dir = result_root / "counts"
+    views_dir = result_root / "views"
+    model_dir = result_root / "model"
+
+    if not args.skip_counts:
+        validate_input_files(args)
 
     if not args.skip_counts:
         cmd = [
             args.python,
             str_path(script_dir / "extract_counts.py"),
-            "--te-level", args.te_level,
             "--sample-prefix", args.sample_prefix,
             "--bam", args.bam,
             "--whitelist", args.whitelist,
-            "--gtf-file", args.gtf_file,
+            "--te-annotation-gtf", args.te_annotation_gtf,
             "--output-dir", str_path(counts_dir),
             "--cell-tag", args.cell_tag,
             "--umi-tag", args.umi_tag,
             "--min-mapq", str(args.min_mapq),
-            "--workers", str(args.workers),
-            "--reducer-workers", str(args.reducer_workers),
+            "--threads", str(args.threads),
+            "--reducer-threads", str(args.reducer_threads),
         ]
         add_optional(cmd, "--tmp-dir", args.tmp_dir)
         add_optional(cmd, "--samtools", args.samtools)
@@ -140,9 +200,7 @@ def main():
         cmd = [
             args.python,
             str_path(script_dir / "build_views.py"),
-            "--te-level", args.te_level,
             "--sample-prefix", args.sample_prefix,
-            "--base-dir", str_path(base_dir),
             "--input-dir", str_path(counts_dir),
             "--output-dir", str_path(views_dir),
             "--align-mode", args.align_mode,
@@ -153,15 +211,13 @@ def main():
         cmd = [
             args.python,
             str_path(script_dir / "train_model.py"),
-            "--te-level", args.te_level,
-            "--base-dir", str_path(base_dir),
             "--data-dir", str_path(views_dir / "aligned_npz"),
             "--output-dir", str_path(model_dir),
+            "--count-likelihood", args.count_likelihood,
             "--n-hidden", str(args.n_hidden),
             "--n-latent", str(args.n_latent),
             "--n-layers", str(args.n_layers),
             "--dropout-rate", str(args.dropout_rate),
-            "--gene-likelihood", args.gene_likelihood,
             "--kl-weight", str(args.kl_weight),
             "--learning-rate", str(args.learning_rate),
             "--batch-size", str(args.batch_size),

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Accelerated 10x U/M TE counting for scALTER human PBMC8k data.
+Accelerated 10x U/M TE counting for scALTER.
 
 This keeps the counting policy used by the original scALTER count extractor:
   - feature = gene_id from repeat_region rows in the TE GTF
@@ -13,7 +13,7 @@ The expensive read/TE overlap step is delegated to standard command-line genomic
 """
 
 # Example production run:
-# /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/extract_counts.py --workers 32 --reducer-workers 1
+# python -u /qiyang/GitHub/scALTER/scripts/extract_counts.py --threads 32 --reducer-threads 1
 
 import argparse
 import gzip
@@ -39,25 +39,21 @@ import pysam
 TE_LEVEL = "subfamily"  # "subfamily" or "locus"
 
 # Input files
-SAMPLE_PREFIX = "pbmc8k"
-BAM = "/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Aligned.sortedByCoord.out.bam"
-WHITELIST = "/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Solo.out/Gene/filtered/barcodes.tsv"
-GTF_BY_LEVEL = {
-    "subfamily": "/qiyang/TEexp/Data/dataset_human/hg38/hg38_TE_subfamily.exclusive.gtf",
-    "locus": "/qiyang/TEexp/Data/dataset_human/hg38/hg38_TE_subfamily.exclusive.gtf",
-}
-GTF_FILE = None  # None = choose from GTF_BY_LEVEL[TE_LEVEL]
+SAMPLE_PREFIX = "scalter"
+BAM = None
+WHITELIST = None
+TE_ANNOTATION_GTF = None
 
 # Output directories
 OUTPUT_DIR = None
-# None = /qiyang/GitHub/scALTER/results/pbmc8k/my_<TE_LEVEL>/counts
+# None = /qiyang/GitHub/scALTER/results/counts
 TMP_DIR = None
 # None = <OUTPUT_DIR>/_tmp_bedtools
 
 # Tool paths
-DEFAULT_ENV_BIN = "/qiyang/Anaconda/conda/envs/teexp/bin"
-SAMTOOLS = None  # None = auto-detect, prefers DEFAULT_ENV_BIN/samtools
-BEDTOOLS = None  # None = auto-detect, prefers DEFAULT_ENV_BIN/bedtools
+DEFAULT_ENV_BIN = None
+SAMTOOLS = None  # None = auto-detect from the active environment/PATH
+BEDTOOLS = None  # None = auto-detect from the active environment/PATH
 AWK = None       # None = auto-detect gawk/awk
 
 # BAM tags and filters
@@ -66,10 +62,10 @@ UMI_TAG = "UB"
 MIN_MAPQ = 0
 
 # Concurrency
-WORKERS = None
+THREADS = None
 # None = max(1, min(cpu_count() - 4, 32))
-REDUCER_WORKERS = None
-# None = max(1, min(8, WORKERS))
+REDUCER_THREADS = None
+# None = max(1, min(8, THREADS))
 
 # Run behavior
 SKIP_EXISTING = True
@@ -81,25 +77,17 @@ KEEP_TMP = False
 CANONICAL_GTF_TO_BED = False
 
 
-def default_output_dir(te_level):
-    return (
-        f"/qiyang/GitHub/scALTER/results/pbmc8k/"
-        f"my_{te_level}/counts"
-    )
-
-
-def default_gtf_file(te_level):
-    if GTF_FILE:
-        return GTF_FILE
-    return GTF_BY_LEVEL[te_level]
+def default_output_dir():
+    return "/qiyang/GitHub/scALTER/results/counts"
 
 
 def resolve_tool(name, explicit=None):
     if explicit:
         return explicit
-    candidate = os.path.join(DEFAULT_ENV_BIN, name)
-    if os.path.exists(candidate):
-        return candidate
+    if DEFAULT_ENV_BIN:
+        candidate = os.path.join(DEFAULT_ENV_BIN, name)
+        if os.path.exists(candidate):
+            return candidate
     found = shutil.which(name)
     if found:
         return found
@@ -536,17 +524,16 @@ def signal_handler(sig, frame):
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(
-        description="Fast PBMC8k 10x U/M TE counter."
+        description="Fast 10x U/M TE counter."
     )
-    parser.add_argument("--te-level", choices=["subfamily", "locus"], default=TE_LEVEL)
     parser.add_argument("--sample-prefix", default=SAMPLE_PREFIX)
-    parser.add_argument("--bam", default=BAM)
-    parser.add_argument("--whitelist", default=WHITELIST)
-    parser.add_argument("--gtf-file", default=GTF_FILE)
+    parser.add_argument("--bam", required=True)
+    parser.add_argument("--whitelist", required=True)
+    parser.add_argument("--te-annotation-gtf", required=True)
     parser.add_argument(
         "--output-dir",
         default=OUTPUT_DIR,
-        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/pbmc8k/my_<level>/counts when OUTPUT_DIR is None",
+        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/counts when OUTPUT_DIR is None",
     )
     parser.add_argument(
         "--tmp-dir",
@@ -559,8 +546,8 @@ def build_arg_parser():
     parser.add_argument("--cell-tag", default=CELL_TAG)
     parser.add_argument("--umi-tag", default=UMI_TAG)
     parser.add_argument("--min-mapq", type=int, default=MIN_MAPQ)
-    parser.add_argument("--workers", type=int, default=WORKERS)
-    parser.add_argument("--reducer-workers", type=int, default=REDUCER_WORKERS)
+    parser.add_argument("--threads", type=int, default=THREADS)
+    parser.add_argument("--reducer-threads", type=int, default=REDUCER_THREADS)
     parser.add_argument("--skip-existing", action="store_true", default=SKIP_EXISTING)
     parser.add_argument("--no-skip-existing", dest="skip_existing", action="store_false")
     parser.add_argument("--reuse-hits", action="store_true", default=REUSE_HITS)
@@ -590,8 +577,8 @@ def main():
     bedtools = resolve_tool("bedtools", args.bedtools)
     awk = resolve_awk(args.awk)
 
-    gtf_file = args.gtf_file or default_gtf_file(args.te_level)
-    output_dir = args.output_dir or default_output_dir(args.te_level)
+    gtf_file = args.te_annotation_gtf
+    output_dir = args.output_dir or default_output_dir()
 
     tmp_dir = args.tmp_dir or os.path.join(output_dir, "_tmp_bedtools")
     bed_dir = os.path.join(tmp_dir, "te_bed")
@@ -600,11 +587,11 @@ def main():
     os.makedirs(tmp_dir, exist_ok=True)
 
     total_cores = cpu_count()
-    workers = args.workers or max(1, min(total_cores - 4, 32))
-    reducer_workers = args.reducer_workers or max(1, min(8, workers))
+    threads = args.threads or max(1, min(total_cores - 4, 32))
+    reducer_threads = args.reducer_threads or max(1, min(8, threads))
 
     print("=" * 80)
-    print("Fast PBMC8k 10x U/M TE counting")
+    print("Fast 10x U/M TE counting")
     print("=" * 80)
     print(f"Sample prefix:   {args.sample_prefix}")
     print(f"BAM:             {args.bam}")
@@ -615,9 +602,9 @@ def main():
     print(f"samtools:        {samtools}")
     print(f"bedtools:        {bedtools}")
     print(f"awk:             {awk}")
-    print(f"Workers:         {workers}")
-    print(f"Reducer workers: {reducer_workers}")
-    print(f"TE level:        {args.te_level}")
+    print(f"Threads:         {threads}")
+    print(f"Reducer threads: {reducer_threads}")
+    print(f"TE level:        {TE_LEVEL}")
     print(f"Coordinate mode: {'canonical' if args.canonical_gtf_to_bed else 'preserve-original'}")
     print()
 
@@ -704,7 +691,7 @@ def main():
     print(f"Phase 1: running {len(task_args)} sample-chromosome intersect tasks ...")
     total_start = time.time()
     phase_start = time.time()
-    with Pool(processes=workers) as pool:
+    with Pool(processes=threads) as pool:
         intersect_results = pool.map(intersect_one_chrom, task_args)
     phase_elapsed = timedelta(seconds=int(time.time() - phase_start))
     skipped_hits = sum(1 for r in intersect_results if r["skipped"])
@@ -723,7 +710,7 @@ def main():
         )
         for sample in samples
     ]
-    with Pool(processes=min(reducer_workers, len(reduce_args))) as pool:
+    with Pool(processes=min(reducer_threads, len(reduce_args))) as pool:
         reduce_results = pool.map(reduce_sample, reduce_args)
     phase_elapsed = timedelta(seconds=int(time.time() - phase_start))
     print(f"  Reduction done in {phase_elapsed}")

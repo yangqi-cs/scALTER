@@ -15,42 +15,59 @@ This repository provides a single-command scALTER pipeline for transposable elem
 
 ## Quick Start
 
+Activate the conda environment that contains scALTER dependencies, then run:
+
 ```bash
-/qiyang/Anaconda/conda/envs/teexp/bin/python /qiyang/GitHub/scALTER/scripts/scALTER.py
+python /qiyang/GitHub/scALTER/scripts/scALTER.py \
+  --bam /path/to/alignments.bam \
+  --whitelist /path/to/barcodes.tsv \
+  --te-annotation-gtf /path/to/te_annotation.gtf
 ```
 
-The PBMC8k defaults are:
+By default, outputs are written under:
 
-- BAM: `/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Aligned.sortedByCoord.out.bam`
-- whitelist: `/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Solo.out/Gene/filtered/barcodes.tsv`
-- TE GTF: `/qiyang/TEexp/Data/dataset_human/hg38/hg38_TE_subfamily.exclusive.gtf`
-- results: `/qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily`
+```text
+/qiyang/GitHub/scALTER/results/
+```
 
 ## Example With Parameters
 
 ```bash
-/qiyang/Anaconda/conda/envs/teexp/bin/python /qiyang/GitHub/scALTER/scripts/scALTER.py \
-  --workers 48 \
-  --reducer-workers 2 \
+python /qiyang/GitHub/scALTER/scripts/scALTER.py \
+  --bam /path/to/alignments.bam \
+  --whitelist /path/to/barcodes.tsv \
+  --te-annotation-gtf /path/to/te_annotation.gtf \
+  --sample-prefix sample1 \
+  --threads 48 \
+  --reducer-threads 2 \
+  --count-likelihood nb \
   --epochs 300 \
   --n-latent 32 \
   --batch-size 128 \
   --learning-rate 1e-3
 ```
 
+## Required Inputs
+
+- `--bam`: input alignment file in BAM format.
+- `--whitelist`: cell barcode whitelist, usually the filtered 10x `barcodes.tsv`.
+- `--te-annotation-gtf`: TE annotation file in GTF format.
+
+Before running the count extraction step, `scripts/scALTER.py` opens the BAM and checks that it is readable and that the requested cell and UMI tags are present in mapped reads.
+
 ## Pipeline Outputs
 
 Step 1 writes BAM-derived count tables:
 
-- `counts/pbmc8k_unique.tsv`
-- `counts/pbmc8k_multi.tsv`
+- `counts/scalter_unique.tsv`
+- `counts/scalter_multi.tsv`
 
 Step 2 writes the three preserved model input views:
 
 - `views/aligned_npz/unique.npz`
 - `views/aligned_npz/multi.npz`
 - `views/aligned_npz/merge.npz`
-- `views/h5ad/pbmc8k_subfamily_u_m_aligned.h5ad`
+- `views/h5ad/scalter_subfamily_u_m_aligned.h5ad`
 
 Step 3 writes model outputs:
 

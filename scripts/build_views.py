@@ -5,12 +5,12 @@
 Build aligned unique/multi/merge sparse matrices from scALTER long TSV output.
 
 Input:
-  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/counts/
-    pbmc8k_unique.tsv
-    pbmc8k_multi.tsv
+  /qiyang/GitHub/scALTER/results/counts/
+    scalter_unique.tsv
+    scalter_multi.tsv
 
 Output:
-  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/views/
+  /qiyang/GitHub/scALTER/results/views/
     aligned_npz/
       barcodes.tsv
       features.tsv
@@ -21,7 +21,7 @@ Output:
       merge.npz
       manifest.json
     h5ad/
-      pbmc8k_subfamily_u_m_aligned.h5ad
+      scalter_subfamily_u_m_aligned.h5ad
 
 The h5ad stores:
   adata.obs              aligned cell barcodes and batch metadata
@@ -32,7 +32,7 @@ The h5ad stores:
 """
 
 # Example production run:
-# nohup /usr/bin/time -v bash -c 'mkdir -p /qiyang/GitHub/scALTER/results/pbmc8k/logs; date; /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/build_views.py; date' > /qiyang/GitHub/scALTER/results/pbmc8k/logs/build_views.log 2>&1 &
+# python -u /qiyang/GitHub/scALTER/scripts/build_views.py
 
 import json
 import argparse
@@ -51,10 +51,10 @@ from scipy import sparse
 # User configuration
 # =========================
 TE_LEVEL = "subfamily"
-SAMPLE_PREFIX = "pbmc8k"
+SAMPLE_PREFIX = "scalter"
 
 # Existing output path from scripts/extract_counts.py.
-BASE_DIR = f"/qiyang/GitHub/scALTER/results/pbmc8k/my_{TE_LEVEL}"
+BASE_DIR = "/qiyang/GitHub/scALTER/results"
 INPUT_DIR = os.path.join(BASE_DIR, f"counts")
 
 OUTPUT_DIR = os.path.join(BASE_DIR, "views")
@@ -75,13 +75,7 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Build aligned scALTER U/M/merge matrix views from long TSV files."
     )
-    parser.add_argument("--te-level", default=TE_LEVEL)
     parser.add_argument("--sample-prefix", default=SAMPLE_PREFIX)
-    parser.add_argument(
-        "--base-dir",
-        default=None,
-        help="Default: /qiyang/GitHub/scALTER/results/pbmc8k/my_<te-level>",
-    )
     parser.add_argument(
         "--input-dir",
         default=None,
@@ -103,14 +97,12 @@ def build_arg_parser():
 
 
 def configure_from_args(args):
-    global TE_LEVEL, SAMPLE_PREFIX, BASE_DIR, INPUT_DIR, OUTPUT_DIR
+    global TE_LEVEL, SAMPLE_PREFIX, INPUT_DIR, OUTPUT_DIR
     global ALIGNED_NPZ_DIR, H5AD_DIR, UNIQUE_TSV, MULTI_TSV, ALIGN_MODE
 
-    TE_LEVEL = args.te_level
     SAMPLE_PREFIX = args.sample_prefix
-    BASE_DIR = args.base_dir or f"/qiyang/GitHub/scALTER/results/pbmc8k/my_{TE_LEVEL}"
-    INPUT_DIR = args.input_dir or os.path.join(BASE_DIR, f"counts")
-    OUTPUT_DIR = args.output_dir or os.path.join(BASE_DIR, f"views")
+    INPUT_DIR = args.input_dir or "/qiyang/GitHub/scALTER/results/counts"
+    OUTPUT_DIR = args.output_dir or "/qiyang/GitHub/scALTER/results/views"
     ALIGNED_NPZ_DIR = os.path.join(OUTPUT_DIR, "aligned_npz")
     H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
     UNIQUE_TSV = args.unique_tsv or os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_unique.tsv")
@@ -314,7 +306,7 @@ def main():
     configure_from_args(args)
 
     print("=" * 90)
-    print("SCALTER PBMC8K U/M TSV -> ALIGNED NPZ + H5AD")
+    print("scALTER U/M TSV -> ALIGNED NPZ + H5AD")
     print("=" * 90)
     print(f"TE_LEVEL:        {TE_LEVEL}")
     print(f"SAMPLE_PREFIX:   {SAMPLE_PREFIX}")

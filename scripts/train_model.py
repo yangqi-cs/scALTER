@@ -22,20 +22,9 @@ from torch.distributions import Normal, kl_divergence as kl
 
 te_level = "subfamily"
 
-# 小鼠 20% 小样本数据
-# BASE_DIR = "/qiyang/TEexp/Data/TEexp/mouse_chemical_reprogramming/agg_new_m_strategy/my_results"
-# DATA_DIR = "orig_s_l"
-# OUTPUT_DIR = f"recon_{te_level}/scalter"
-
-# 人类GBM数据
-# BASE_DIR = "/qiyang/TEexp/Data/TEexp/human_gbm_smartseq/my_results_mates_div_nh"
-# DATA_DIR = "orig_s_l"
-# OUTPUT_DIR = f"recon_{te_level}/scalter"
-
-# PBMC8k default data, produced by scripts/build_views.py
-BASE_DIR = "/qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily"
-DATA_DIR = "views/aligned_npz"
-OUTPUT_DIR = "model"
+# Default data produced by scripts/build_views.py
+DATA_DIR = "/qiyang/GitHub/scALTER/results/views/aligned_npz"
+OUTPUT_DIR = "/qiyang/GitHub/scALTER/results/model"
 
 UNIQUE_NPZ = "unique.npz"
 MULTI_NPZ = "multi.npz"
@@ -48,7 +37,7 @@ N_HIDDEN = 128
 N_LATENT = 32
 N_LAYERS = 1
 DROPOUT_RATE = 0.0
-GENE_LIKELIHOOD = "nb"  # "nb" or "zinb"
+COUNT_LIKELIHOOD = "nb"  # "nb" or "zinb"
 USE_BATCH_NORM = True
 USE_LAYER_NORM = False
 KL_WEIGHT = 0.00001  # Very small for TE data
@@ -66,8 +55,6 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Train the scALTER three-view model on unique/multi/merge matrices."
     )
-    parser.add_argument("--te-level", default=te_level)
-    parser.add_argument("--base-dir", default=BASE_DIR)
     parser.add_argument("--data-dir", default=DATA_DIR)
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
     parser.add_argument("--unique-npz", default=UNIQUE_NPZ)
@@ -75,11 +62,11 @@ def build_arg_parser():
     parser.add_argument("--merge-npz", default=MERGE_NPZ)
     parser.add_argument("--barcodes", default=BARCODE_FILE)
     parser.add_argument("--features", default=FEATURE_FILE)
+    parser.add_argument("--count-likelihood", choices=["nb", "zinb"], default=COUNT_LIKELIHOOD)
     parser.add_argument("--n-hidden", type=int, default=N_HIDDEN)
     parser.add_argument("--n-latent", type=int, default=N_LATENT)
     parser.add_argument("--n-layers", type=int, default=N_LAYERS)
     parser.add_argument("--dropout-rate", type=float, default=DROPOUT_RATE)
-    parser.add_argument("--gene-likelihood", choices=["nb", "zinb"], default=GENE_LIKELIHOOD)
     parser.add_argument("--kl-weight", type=float, default=KL_WEIGHT)
     parser.add_argument("--learning-rate", type=float, default=LEARNING_RATE)
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
@@ -96,15 +83,13 @@ def build_arg_parser():
 
 
 def configure_from_args(args):
-    global te_level, BASE_DIR, DATA_DIR, OUTPUT_DIR
+    global DATA_DIR, OUTPUT_DIR
     global UNIQUE_NPZ, MULTI_NPZ, MERGE_NPZ, BARCODE_FILE, FEATURE_FILE
-    global N_HIDDEN, N_LATENT, N_LAYERS, DROPOUT_RATE, GENE_LIKELIHOOD
+    global N_HIDDEN, N_LATENT, N_LAYERS, DROPOUT_RATE, COUNT_LIKELIHOOD
     global USE_BATCH_NORM, USE_LAYER_NORM, KL_WEIGHT, LEARNING_RATE
     global BATCH_SIZE, PREDICT_BATCH_SIZE, OUTPUT_CHUNK_FEATURES
     global EPOCHS, EARLY_STOP, REDUCE_LR, RANDOM_SEED
 
-    te_level = args.te_level
-    BASE_DIR = args.base_dir
     DATA_DIR = args.data_dir
     OUTPUT_DIR = args.output_dir
     UNIQUE_NPZ = args.unique_npz
@@ -116,7 +101,7 @@ def configure_from_args(args):
     N_LATENT = args.n_latent
     N_LAYERS = args.n_layers
     DROPOUT_RATE = args.dropout_rate
-    GENE_LIKELIHOOD = args.gene_likelihood
+    COUNT_LIKELIHOOD = args.count_likelihood
     USE_BATCH_NORM = args.use_batch_norm
     USE_LAYER_NORM = args.use_layer_norm
     KL_WEIGHT = args.kl_weight
@@ -133,7 +118,6 @@ def configure_from_args(args):
 def run_config_dict():
     return {
         "te_level": te_level,
-        "base_dir": BASE_DIR,
         "data_dir": DATA_DIR,
         "output_dir": OUTPUT_DIR,
         "unique_npz": UNIQUE_NPZ,
@@ -145,7 +129,7 @@ def run_config_dict():
         "n_latent": N_LATENT,
         "n_layers": N_LAYERS,
         "dropout_rate": DROPOUT_RATE,
-        "gene_likelihood": GENE_LIKELIHOOD,
+        "count_likelihood": COUNT_LIKELIHOOD,
         "use_batch_norm": USE_BATCH_NORM,
         "use_layer_norm": USE_LAYER_NORM,
         "kl_weight": KL_WEIGHT,
@@ -215,8 +199,8 @@ class NegativeBinomial:
     Count likelihood helper
     
     Args:
-        mu: mean (batch, genes)
-        theta: inverse dispersion (batch, genes)
+        mu: mean (batch, features)
+        theta: inverse dispersion (batch, features)
     """
     def __init__(self, mu, theta, eps=1e-8):
         self.mu = mu
@@ -254,9 +238,9 @@ class ZeroInflatedNegativeBinomial:
     Count likelihood helper
     
     Args:
-        mu: mean (batch, genes)
-        theta: inverse dispersion (batch, genes)
-        zi_logits: logits for zero-inflation (batch, genes)
+        mu: mean (batch, features)
+        theta: inverse dispersion (batch, features)
+        zi_logits: logits for zero-inflation (batch, features)
     """
     def __init__(self, mu, theta, zi_logits, eps=1e-8):
         self.mu = mu
@@ -377,11 +361,11 @@ class CountDecoder(nn.Module):
         dropout_rate: float = 0.1,
         use_batch_norm: bool = True,
         use_layer_norm: bool = False,
-        gene_likelihood: str = "zinb",  # "zinb" or "nb"
+        count_likelihood: str = "zinb",  # "zinb" or "nb"
     ):
         super().__init__()
         
-        self.gene_likelihood = gene_likelihood
+        self.count_likelihood = count_likelihood
         self.n_output = n_output
         
         # Decoder layers
@@ -401,12 +385,12 @@ class CountDecoder(nn.Module):
             nn.Softmax(dim=-1)
         )
         
-        # Dispersion (gene-specific, shared across cells)
+        # Dispersion (feature-specific, shared across cells)
         # 参考latent count: dispersion是可学习参数
         self.px_r = nn.Parameter(torch.randn(n_output))
         
         # Dropout (zero-inflation, only for ZINB)
-        if gene_likelihood == "zinb":
+        if count_likelihood == "zinb":
             self.px_dropout_decoder = nn.Linear(n_hidden, n_output)
     
     def forward(self, z, library):
@@ -431,7 +415,7 @@ class CountDecoder(nn.Module):
         px_r = torch.exp(self.px_r)
         
         # Dropout (only for ZINB)
-        if self.gene_likelihood == "zinb":
+        if self.count_likelihood == "zinb":
             px_dropout = self.px_dropout_decoder(px)
         else:
             px_dropout = None
@@ -561,14 +545,14 @@ class ScalterPoE(nn.Module):
         n_latent: int = 10,
         n_layers: int = 1,
         dropout_rate: float = 0.1,
-        gene_likelihood: str = "zinb",  # "zinb" or "nb"
+        count_likelihood: str = "zinb",  # "zinb" or "nb"
         use_batch_norm: bool = True,
         use_layer_norm: bool = False,
     ):
         super().__init__()
         
         self.n_latent = n_latent
-        self.gene_likelihood = gene_likelihood
+        self.count_likelihood = count_likelihood
         
         # Encoders for each view
         self.z_encoder_u = Encoder(
@@ -613,7 +597,7 @@ class ScalterPoE(nn.Module):
             dropout_rate=dropout_rate,
             use_batch_norm=use_batch_norm,
             use_layer_norm=use_layer_norm,
-            gene_likelihood=gene_likelihood,
+            count_likelihood=count_likelihood,
         )
         
         self.decoder_m = CountDecoder(
@@ -624,7 +608,7 @@ class ScalterPoE(nn.Module):
             dropout_rate=dropout_rate,
             use_batch_norm=use_batch_norm,
             use_layer_norm=use_layer_norm,
-            gene_likelihood=gene_likelihood,
+            count_likelihood=count_likelihood,
         )
 
         self.decoder_merge = CountDecoder(
@@ -635,7 +619,7 @@ class ScalterPoE(nn.Module):
             dropout_rate=dropout_rate,
             use_batch_norm=use_batch_norm,
             use_layer_norm=use_layer_norm,
-            gene_likelihood=gene_likelihood,
+            count_likelihood=count_likelihood,
         )
     
     def _get_inference_input(self, x):
@@ -787,14 +771,14 @@ class ScalterPoE(nn.Module):
         
         参考latent count实现
         """
-        if self.gene_likelihood == "zinb":
+        if self.count_likelihood == "zinb":
             reconst_loss = -ZeroInflatedNegativeBinomial(
                 mu=px["px_rate"],
                 theta=px["px_r"],
                 zi_logits=px["px_dropout"],
             ).log_prob(x).sum(dim=-1)
         
-        elif self.gene_likelihood == "nb":
+        elif self.count_likelihood == "nb":
             reconst_loss = -NegativeBinomial(
                 mu=px["px_rate"],
                 theta=px["px_r"],
@@ -1080,7 +1064,6 @@ if __name__ == "__main__":
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
     print(f"Using device: {device}")
-    os.chdir(BASE_DIR)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(os.path.join(OUTPUT_DIR, "run_config.json"), "w") as f:
         json.dump(run_config_dict(), f, indent=2, sort_keys=True)
@@ -1159,7 +1142,7 @@ if __name__ == "__main__":
         n_latent=N_LATENT,
         n_layers=N_LAYERS,
         dropout_rate=DROPOUT_RATE,
-        gene_likelihood=GENE_LIKELIHOOD,
+        count_likelihood=COUNT_LIKELIHOOD,
         use_batch_norm=USE_BATCH_NORM,
         use_layer_norm=USE_LAYER_NORM,
     )
@@ -1169,7 +1152,7 @@ if __name__ == "__main__":
     print(f"  Encoder: log(1+x) → FC layers → (μ, σ²)")
     print(f"  PoE: Precision-weighted fusion")
     print(f"  Decoder: z → FC layers → (px_scale, px_r, px_dropout)")
-    print(f"  Likelihood: {model.gene_likelihood.upper()}")
+    print(f"  Likelihood: {model.count_likelihood.upper()}")
     
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"\nTrainable parameters: {trainable_params:,}")
@@ -1239,5 +1222,5 @@ if __name__ == "__main__":
     print(f"  - Standard latent count architecture")
     print(f"  - Product-of-Experts fusion")
     print(f"  - Inputs: unique, multi, and merge views")
-    print(f"  - {model.gene_likelihood.upper()} likelihood")
+    print(f"  - {model.count_likelihood.upper()} likelihood")
     print(f"  - Small KL weight ({KL_WEIGHT})")
