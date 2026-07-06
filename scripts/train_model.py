@@ -23,8 +23,10 @@ from torch.distributions import Normal, kl_divergence as kl
 te_level = "subfamily"
 
 # Default data produced by scripts/build_views.py
-DATA_DIR = "/qiyang/GitHub/scALTER/results/views/raw_exp"
+DATA_DIR = "/qiyang/GitHub/scALTER/results/raw_exp"
 OUTPUT_DIR = "/qiyang/GitHub/scALTER/results/model"
+RECON_DIR = "/qiyang/GitHub/scALTER/results/recon_exp"
+LATENT_DIR = "/qiyang/GitHub/scALTER/results/latent"
 
 UNIQUE_NPZ = "unique.npz"
 MULTI_NPZ = "multi.npz"
@@ -57,6 +59,8 @@ def build_arg_parser():
     )
     parser.add_argument("--data-dir", default=DATA_DIR)
     parser.add_argument("--output-dir", default=OUTPUT_DIR)
+    parser.add_argument("--recon-dir", default=RECON_DIR)
+    parser.add_argument("--latent-dir", default=LATENT_DIR)
     parser.add_argument("--unique-npz", default=UNIQUE_NPZ)
     parser.add_argument("--multi-npz", default=MULTI_NPZ)
     parser.add_argument("--merge-npz", default=MERGE_NPZ)
@@ -83,7 +87,7 @@ def build_arg_parser():
 
 
 def configure_from_args(args):
-    global DATA_DIR, OUTPUT_DIR
+    global DATA_DIR, OUTPUT_DIR, RECON_DIR, LATENT_DIR
     global UNIQUE_NPZ, MULTI_NPZ, MERGE_NPZ, BARCODE_FILE, FEATURE_FILE
     global N_HIDDEN, N_LATENT, N_LAYERS, DROPOUT_RATE, COUNT_LIKELIHOOD
     global USE_BATCH_NORM, USE_LAYER_NORM, KL_WEIGHT, LEARNING_RATE
@@ -92,6 +96,8 @@ def configure_from_args(args):
 
     DATA_DIR = args.data_dir
     OUTPUT_DIR = args.output_dir
+    RECON_DIR = args.recon_dir
+    LATENT_DIR = args.latent_dir
     UNIQUE_NPZ = args.unique_npz
     MULTI_NPZ = args.multi_npz
     MERGE_NPZ = args.merge_npz
@@ -120,6 +126,8 @@ def run_config_dict():
         "te_level": te_level,
         "data_dir": DATA_DIR,
         "output_dir": OUTPUT_DIR,
+        "recon_dir": RECON_DIR,
+        "latent_dir": LATENT_DIR,
         "unique_npz": UNIQUE_NPZ,
         "multi_npz": MULTI_NPZ,
         "merge_npz": MERGE_NPZ,
@@ -936,14 +944,12 @@ class ScalterTrainer:
                 df = pd.DataFrame(block, index=rownames[start:end], columns=colnames)
                 df.to_csv(f, sep="\t", header=False, float_format="%.6f")
 
-    def predict(self, adata_u, adata_m, adata_merge, save_dir, batch_size=128):
+    def predict(self, adata_u, adata_m, adata_merge, recon_dir, latent_dir, batch_size=128):
         """
         Generate predictions in batches to avoid moving the full input matrix
         to GPU memory at once.
         """
         self.model.eval()
-        recon_dir = os.path.join(save_dir, "recon_exp")
-        latent_dir = os.path.join(save_dir, "latent")
         os.makedirs(recon_dir, exist_ok=True)
         os.makedirs(latent_dir, exist_ok=True)
 
@@ -1208,16 +1214,18 @@ if __name__ == "__main__":
     print("Generating Predictions")
     print("="*70)
     
-    trainer.predict(adata_u, adata_m, adata_merge, OUTPUT_DIR, batch_size=PREDICT_BATCH_SIZE)
+    trainer.predict(adata_u, adata_m, adata_merge, RECON_DIR, LATENT_DIR, batch_size=PREDICT_BATCH_SIZE)
     
     print("\n" + "="*70)
     print("✅ Training Complete!")
     print("="*70)
     print(f"Output directory: {OUTPUT_DIR}")
     print(f"\nGenerated files:")
-    print(f"  - recon_exp/mean_u.tsv, recon_exp/mean_m.tsv, recon_exp/mean_a.tsv")
-    print(f"  - latent/latent_mu.tsv        (For clustering)")
-    print(f"  - latent/latent_std.tsv       (Uncertainty)")
+    print(f"  - {os.path.join(RECON_DIR, 'mean_u.tsv')}")
+    print(f"  - {os.path.join(RECON_DIR, 'mean_m.tsv')}")
+    print(f"  - {os.path.join(RECON_DIR, 'mean_a.tsv')}")
+    print(f"  - {os.path.join(LATENT_DIR, 'latent_mu.tsv')}        (For clustering)")
+    print(f"  - {os.path.join(LATENT_DIR, 'latent_std.tsv')}       (Uncertainty)")
     print(f"  - scalter_weights.pt         (Model weights)")
     print(f"  - scalter_checkpoint.pt (Model weights + config)")
     print(f"  - run_config.json             (Run configuration)")

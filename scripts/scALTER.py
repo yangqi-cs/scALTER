@@ -100,7 +100,7 @@ def build_arg_parser():
     parser.add_argument(
         "--result-root",
         default=DEFAULT_RESULT_ROOT,
-        help="Root output directory. scALTER writes views/ and model/ under this path.",
+        help="Root output directory. scALTER writes raw_exp/, model/, recon_exp/, and latent/ under this path.",
     )
 
     parser.add_argument(
@@ -164,8 +164,10 @@ def main():
 
     script_dir = Path(__file__).resolve().parent
     result_root = Path(args.result_root)
-    views_dir = result_root / "views"
+    raw_exp_dir = result_root / "raw_exp"
     model_dir = result_root / "model"
+    recon_dir = result_root / "recon_exp"
+    latent_dir = result_root / "latent"
 
     if args.skip_counts and not args.skip_views:
         raise ValueError(
@@ -208,7 +210,7 @@ def main():
                 args.python,
                 str_path(script_dir / "build_views.py"),
                 "--input-dir", str_path(count_tmp_dir),
-                "--output-dir", str_path(views_dir),
+                "--output-dir", str_path(raw_exp_dir),
                 "--align-mode", args.align_mode,
             ]
             run_step("Step 2/3: building aligned input views", cmd)
@@ -217,8 +219,10 @@ def main():
         cmd = [
             args.python,
             str_path(script_dir / "train_model.py"),
-            "--data-dir", str_path(views_dir / "raw_exp"),
+            "--data-dir", str_path(raw_exp_dir),
             "--output-dir", str_path(model_dir),
+            "--recon-dir", str_path(recon_dir),
+            "--latent-dir", str_path(latent_dir),
             "--count-likelihood", args.count_likelihood,
             "--n-hidden", str(args.n_hidden),
             "--n-latent", str(args.n_latent),

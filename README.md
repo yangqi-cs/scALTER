@@ -42,21 +42,21 @@ Run the full scALTER pipeline, including count extraction, view construction, an
 Common options:
 
 ```text
---result-root          Root output directory for views/ and model/
---cell-tag             BAM tag for cell barcodes
---umi-tag              BAM tag for UMIs
---threads              Number of threads for count extraction
---reducer-threads      Number of threads for count table reduction
---align-mode           How to align unique and multi matrices: union or intersection
---count-likelihood     Count likelihood used by the model: nb or zinb
---n-hidden             Hidden dimension
---n-latent             Latent representation dimension
---n-layers             Number of neural network layers
---dropout-rate         Dropout rate
---kl-weight            KL loss weight
---learning-rate        Learning rate
---batch-size           Training batch size
---epochs               Maximum number of training epochs
+--result-root          Root output directory. Default: /qiyang/GitHub/scALTER/results
+--cell-tag             BAM tag for cell barcodes. Default: CB
+--umi-tag              BAM tag for UMIs. Default: UB
+--threads              Threads for count extraction. Default: 32
+--reducer-threads      Threads for count table reduction. Default: 1
+--align-mode           Matrix alignment mode. Default: union
+--count-likelihood     Count likelihood, nb or zinb. Default: nb
+--n-hidden             Hidden dimension. Default: 128
+--n-latent             Latent dimension. Default: 32
+--n-layers             Number of neural network layers. Default: 1
+--dropout-rate         Dropout rate. Default: 0.0
+--kl-weight            KL loss weight. Default: 1e-5
+--learning-rate        Learning rate. Default: 1e-3
+--batch-size           Training batch size. Default: 128
+--epochs               Maximum training epochs. Default: 300
 ```
 
 - #### scripts/extract_counts.py
@@ -106,18 +106,19 @@ By default, scALTER writes results under:
 The main output files include:
 
 ```text
-views/raw_exp/unique.npz
-views/raw_exp/multi.npz
-views/raw_exp/merge.npz
-views/raw_exp/barcodes.tsv
-views/raw_exp/features.tsv
+raw_exp/unique.npz
+raw_exp/multi.npz
+raw_exp/merge.npz
+raw_exp/barcodes.tsv
+raw_exp/features.tsv
+raw_exp/h5ad/scalter_subfamily_u_m_aligned.h5ad
 model/scalter_weights.pt
 model/scalter_checkpoint.pt
-model/recon_exp/mean_u.tsv
-model/recon_exp/mean_m.tsv
-model/recon_exp/mean_a.tsv
-model/latent/latent_mu.tsv
-model/latent/latent_std.tsv
+recon_exp/mean_u.tsv
+recon_exp/mean_m.tsv
+recon_exp/mean_a.tsv
+latent/latent_mu.tsv
+latent/latent_std.tsv
 ```
 
 ## Contact

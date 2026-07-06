@@ -9,16 +9,15 @@ Input:
   multi.tsv
 
 Output:
-  /qiyang/GitHub/scALTER/results/views/
-    raw_exp/
-      barcodes.tsv
-      features.tsv
-      obs_metadata.csv
-      var_metadata.csv
-      unique.npz
-      multi.npz
-      merge.npz
-      manifest.json
+  /qiyang/GitHub/scALTER/results/raw_exp/
+    barcodes.tsv
+    features.tsv
+    obs_metadata.csv
+    var_metadata.csv
+    unique.npz
+    multi.npz
+    merge.npz
+    manifest.json
     h5ad/
       scalter_subfamily_u_m_aligned.h5ad
 
@@ -56,9 +55,8 @@ SAMPLE_NAME = "scalter"
 BASE_DIR = "/qiyang/GitHub/scALTER/results"
 INPUT_DIR = os.path.join(BASE_DIR, "_tmp_counts")
 
-OUTPUT_DIR = os.path.join(BASE_DIR, "views")
-RAW_EXP_DIR = os.path.join(OUTPUT_DIR, "raw_exp")
-H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
+RAW_EXP_DIR = os.path.join(BASE_DIR, "raw_exp")
+H5AD_DIR = os.path.join(RAW_EXP_DIR, "h5ad")
 
 UNIQUE_TSV = os.path.join(INPUT_DIR, "unique.tsv")
 MULTI_TSV = os.path.join(INPUT_DIR, "multi.tsv")
@@ -82,7 +80,7 @@ def build_arg_parser():
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Directory for raw_exp/ and h5ad/ outputs.",
+        help="Directory for raw expression matrix outputs.",
     )
     parser.add_argument("--unique-tsv", default=None)
     parser.add_argument("--multi-tsv", default=None)
@@ -95,13 +93,12 @@ def build_arg_parser():
 
 
 def configure_from_args(args):
-    global TE_LEVEL, INPUT_DIR, OUTPUT_DIR
+    global TE_LEVEL, INPUT_DIR
     global RAW_EXP_DIR, H5AD_DIR, UNIQUE_TSV, MULTI_TSV, ALIGN_MODE
 
     INPUT_DIR = args.input_dir or "/qiyang/GitHub/scALTER/results/_tmp_counts"
-    OUTPUT_DIR = args.output_dir or "/qiyang/GitHub/scALTER/results/views"
-    RAW_EXP_DIR = os.path.join(OUTPUT_DIR, "raw_exp")
-    H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
+    RAW_EXP_DIR = args.output_dir or "/qiyang/GitHub/scALTER/results/raw_exp"
+    H5AD_DIR = os.path.join(RAW_EXP_DIR, "h5ad")
     UNIQUE_TSV = args.unique_tsv or os.path.join(INPUT_DIR, "unique.tsv")
     MULTI_TSV = args.multi_tsv or os.path.join(INPUT_DIR, "multi.tsv")
     ALIGN_MODE = args.align_mode
@@ -269,7 +266,7 @@ def build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat):
         "align_mode": ALIGN_MODE,
         "input_unique_tsv": UNIQUE_TSV,
         "input_multi_tsv": MULTI_TSV,
-        "output_dir": OUTPUT_DIR,
+        "raw_exp_dir": RAW_EXP_DIR,
         "shape": {
             "n_cells": int(len(barcodes)),
             "n_features": int(len(features)),
@@ -286,13 +283,13 @@ def build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat):
         },
         "dtype": str(DTYPE),
         "files": {
-            "barcodes": "raw_exp/barcodes.tsv",
-            "features": "raw_exp/features.tsv",
-            "obs_metadata": "raw_exp/obs_metadata.csv",
-            "var_metadata": "raw_exp/var_metadata.csv",
-            "unique_npz": "raw_exp/unique.npz",
-            "multi_npz": "raw_exp/multi.npz",
-            "merge_npz": "raw_exp/merge.npz",
+            "barcodes": "barcodes.tsv",
+            "features": "features.tsv",
+            "obs_metadata": "obs_metadata.csv",
+            "var_metadata": "var_metadata.csv",
+            "unique_npz": "unique.npz",
+            "multi_npz": "multi.npz",
+            "merge_npz": "merge.npz",
             "h5ad": f"h5ad/{SAMPLE_NAME}_{TE_LEVEL}_u_m_aligned.h5ad",
         },
     }
@@ -308,7 +305,7 @@ def main():
     print(f"TE_LEVEL:        {TE_LEVEL}")
     print(f"SAMPLE:          {SAMPLE_NAME}")
     print(f"INPUT_DIR:       {INPUT_DIR}")
-    print(f"OUTPUT_DIR:      {OUTPUT_DIR}")
+    print(f"RAW_EXP_DIR:     {RAW_EXP_DIR}")
     print(f"ALIGN_MODE:      {ALIGN_MODE}")
     print("=" * 90)
 
