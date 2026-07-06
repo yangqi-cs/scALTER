@@ -25,17 +25,17 @@ te_level = "subfamily"
 # 小鼠 20% 小样本数据
 # BASE_DIR = "/qiyang/TEexp/Data/TEexp/mouse_chemical_reprogramming/agg_new_m_strategy/my_results"
 # DATA_DIR = "orig_s_l"
-# OUTPUT_DIR = f"recon_{te_level}/scvi_style_poe"
+# OUTPUT_DIR = f"recon_{te_level}/scalter"
 
 # 人类GBM数据
 # BASE_DIR = "/qiyang/TEexp/Data/TEexp/human_gbm_smartseq/my_results_mates_div_nh"
 # DATA_DIR = "orig_s_l"
-# OUTPUT_DIR = f"recon_{te_level}/scvi_style_poe"
+# OUTPUT_DIR = f"recon_{te_level}/scalter"
 
-# PBMC8k default data, produced by scripts/2_build_u_m_views.py
+# PBMC8k default data, produced by scripts/build_views.py
 BASE_DIR = "/qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily"
-DATA_DIR = "2_subfamily_u_m_aligned/aligned_npz"
-OUTPUT_DIR = "3_cross_view/1_7_scvi_poe_unique_multi_merge_best_model"
+DATA_DIR = "views/aligned_npz"
+OUTPUT_DIR = "model"
 
 UNIQUE_NPZ = "unique.npz"
 MULTI_NPZ = "multi.npz"
@@ -64,7 +64,7 @@ RANDOM_SEED = 42
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(
-        description="Train the scALTER three-view scVI-PoE model on unique/multi/merge matrices."
+        description="Train the scALTER three-view model on unique/multi/merge matrices."
     )
     parser.add_argument("--te-level", default=te_level)
     parser.add_argument("--base-dir", default=BASE_DIR)
@@ -160,9 +160,7 @@ def run_config_dict():
     }
 
 
-# Device configuration
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
 
 # --- Helper Functions ---
 def _nan2inf(x):
@@ -208,13 +206,13 @@ def write_text_matrix(matrix, filename, rownames=None, colnames=None, transpose=
 
 
 # ============================================
-# scVI-style Distributions (参考scvi-tools)
+# latent count Distributions (参考scALTER)
 # ============================================
 class NegativeBinomial:
     """
     Negative Binomial distribution
     
-    参考：scvi-tools/scvi/distributions/_negative_binomial.py
+    Count likelihood helper
     
     Args:
         mu: mean (batch, genes)
@@ -253,7 +251,7 @@ class ZeroInflatedNegativeBinomial:
     """
     Zero-Inflated Negative Binomial
     
-    参考：scvi-tools/scvi/distributions/_negative_binomial.py
+    Count likelihood helper
     
     Args:
         mu: mean (batch, genes)
@@ -293,13 +291,13 @@ class ZeroInflatedNegativeBinomial:
 
 
 # ============================================
-# scVI-style Encoder (参考scvi-tools)
+# latent count Encoder (参考scALTER)
 # ============================================
 class Encoder(nn.Module):
     """
     Encoder q(z|x)
     
-    参考：scvi-tools/scvi/nn/_base_components.py - Encoder class
+    Encoder block
     
     Architecture:
         x → [Linear → BN → Activation → Dropout] × n_layers → μ, log(σ²)
@@ -356,13 +354,13 @@ class Encoder(nn.Module):
 
 
 # ============================================
-# scVI-style Decoder (参考scvi-tools)
+# latent count Decoder (参考scALTER)
 # ============================================
-class DecoderSCVI(nn.Module):
+class CountDecoder(nn.Module):
     """
     Decoder p(x|z) with NB or ZINB output
     
-    参考：scvi-tools/scvi/module/_vae.py - Decoder
+    Decoder block
     
     Architecture:
         z → [Linear → BN → Activation → Dropout] × n_layers
@@ -404,7 +402,7 @@ class DecoderSCVI(nn.Module):
         )
         
         # Dispersion (gene-specific, shared across cells)
-        # 参考scVI: dispersion是可学习参数
+        # 参考latent count: dispersion是可学习参数
         self.px_r = nn.Parameter(torch.randn(n_output))
         
         # Dropout (zero-inflation, only for ZINB)
@@ -447,13 +445,13 @@ class DecoderSCVI(nn.Module):
 
 
 # ============================================
-# Fully Connected Layers (参考scvi-tools)
+# Fully Connected Layers (参考scALTER)
 # ============================================
 class FCLayers(nn.Module):
     """
     Fully Connected Layers
     
-    参考：scvi-tools/scvi/nn/_base_components.py - FCLayers
+    Fully connected block
     
     A helper class to build stacked fully-connected layers.
     """
@@ -542,17 +540,17 @@ class ProductOfExperts(nn.Module):
 
 
 # ============================================
-# scVI-style VAE with PoE (主模型)
+# latent count VAE with PoE (主模型)
 # ============================================
-class SCVI_PoE(nn.Module):
+class ScalterPoE(nn.Module):
     """
     Multi-view VAE with Product-of-Experts
     
-    基于scvi-tools的scVI架构，扩展到多视图
+    基于scALTER的latent count架构，扩展到多视图
     
     Reference:
-    - scvi-tools: https://github.com/scverse/scvi-tools
-    - scVI paper: Lopez et al., Nature Methods 2018
+    
+    - latent count paper: Lopez et al., Nature Methods 2018
     """
     def __init__(
         self,
@@ -607,7 +605,7 @@ class SCVI_PoE(nn.Module):
         self.poe = ProductOfExperts()
         
         # Decoders
-        self.decoder_u = DecoderSCVI(
+        self.decoder_u = CountDecoder(
             n_input=n_latent,
             n_output=n_input_u,
             n_hidden=n_hidden,
@@ -618,7 +616,7 @@ class SCVI_PoE(nn.Module):
             gene_likelihood=gene_likelihood,
         )
         
-        self.decoder_m = DecoderSCVI(
+        self.decoder_m = CountDecoder(
             n_input=n_latent,
             n_output=n_input_m,
             n_hidden=n_hidden,
@@ -629,7 +627,7 @@ class SCVI_PoE(nn.Module):
             gene_likelihood=gene_likelihood,
         )
 
-        self.decoder_merge = DecoderSCVI(
+        self.decoder_merge = CountDecoder(
             n_input=n_latent,
             n_output=n_input_merge,
             n_hidden=n_hidden,
@@ -644,7 +642,7 @@ class SCVI_PoE(nn.Module):
         """
         Prepare input for encoder (log-transform)
         
-        参考scVI: input是log(1+x)
+        参考latent count: input是log(1+x)
         """
         x_ = torch.log(1 + x)
         return x_
@@ -749,7 +747,7 @@ class SCVI_PoE(nn.Module):
         """
         Compute ELBO loss
         
-        参考scVI的loss计算
+        参考latent count的loss计算
         
         ELBO = E[log p(x|z)] - KL(q(z|x) || p(z))
         """
@@ -787,7 +785,7 @@ class SCVI_PoE(nn.Module):
         """
         Compute reconstruction loss (NB or ZINB)
         
-        参考scVI实现
+        参考latent count实现
         """
         if self.gene_likelihood == "zinb":
             reconst_loss = -ZeroInflatedNegativeBinomial(
@@ -806,13 +804,13 @@ class SCVI_PoE(nn.Module):
 
 
 # ============================================
-# Trainer (参考scvi-tools的训练流程)
+# Trainer (参考scALTER的训练流程)
 # ============================================
-class SCVIPoETrainer:
+class ScalterTrainer:
     """
-    Trainer for scVI-style VAE with PoE
+    Trainer for latent count VAE with PoE
     
-    参考scvi-tools的训练流程
+    参考scALTER的训练流程
     """
     def __init__(self, model, device, kl_weight=1.0):
         self.model = model
@@ -842,7 +840,7 @@ class SCVIPoETrainer:
             'train_recon': [],
             'train_kl': []
         }
-        best_model_path = os.path.join(save_path, "scvi_poe_weights.pt") if save_path else None
+        validation_checkpoint_path = os.path.join(save_path, "scalter_weights.pt") if save_path else None
         
         for epoch in range(1, epochs + 1):
             # Training
@@ -930,18 +928,18 @@ class SCVIPoETrainer:
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 epochs_no_improve = 0
-                if best_model_path:
-                    torch.save(self.model.state_dict(), best_model_path)
-                    print(f"  ✓ Saved best model")
+                if validation_checkpoint_path:
+                    torch.save(self.model.state_dict(), validation_checkpoint_path)
+                    print(f"  ✓ Saved checkpoint")
             else:
                 epochs_no_improve += 1
                 if epochs_no_improve >= early_stop:
                     print("Early stopping triggered.")
                     break
 
-        if best_model_path and os.path.exists(best_model_path):
-            self.model.load_state_dict(torch.load(best_model_path, map_location=self.device))
-            print(f"Loaded best model from {best_model_path} (best Val Loss: {best_val_loss:.4f})")
+        if validation_checkpoint_path and os.path.exists(validation_checkpoint_path):
+            self.model.load_state_dict(torch.load(validation_checkpoint_path, map_location=self.device))
+            print(f"Loaded checkpoint from {validation_checkpoint_path} (best Val Loss: {best_val_loss:.4f})")
         
         return history
     
@@ -1081,6 +1079,7 @@ if __name__ == "__main__":
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(RANDOM_SEED)
 
+    print(f"Using device: {device}")
     os.chdir(BASE_DIR)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     with open(os.path.join(OUTPUT_DIR, "run_config.json"), "w") as f:
@@ -1146,13 +1145,13 @@ if __name__ == "__main__":
     val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False)
     
     # ============================================
-    # Initialize scVI-style model
+    # Initialize latent count model
     # ============================================
     print("\n" + "="*70)
-    print("Initializing scVI-style VAE with PoE")
+    print("Initializing latent count VAE with PoE")
     print("="*70)
     
-    model = SCVI_PoE(
+    model = ScalterPoE(
         n_input_u=adata_u.n_vars,
         n_input_m=adata_m.n_vars,
         n_input_merge=adata_merge.n_vars,
@@ -1166,7 +1165,7 @@ if __name__ == "__main__":
     )
     
     print(model)
-    print(f"\nArchitecture (scVI-style):")
+    print(f"\nArchitecture (latent count):")
     print(f"  Encoder: log(1+x) → FC layers → (μ, σ²)")
     print(f"  PoE: Precision-weighted fusion")
     print(f"  Decoder: z → FC layers → (px_scale, px_r, px_dropout)")
@@ -1182,7 +1181,7 @@ if __name__ == "__main__":
     print("Training")
     print("="*70)
     
-    trainer = SCVIPoETrainer(model, device, kl_weight=KL_WEIGHT)
+    trainer = ScalterTrainer(model, device, kl_weight=KL_WEIGHT)
     
     print(f"KL weight: {KL_WEIGHT}")
     print(f"  (Small KL weight for sparse TE data)")
@@ -1211,7 +1210,7 @@ if __name__ == "__main__":
             "barcodes": adata_u.obs_names.astype(str).tolist(),
             "features": adata_u.var_names.astype(str).tolist(),
         },
-        os.path.join(OUTPUT_DIR, "scvi_poe_model_checkpoint.pt"),
+        os.path.join(OUTPUT_DIR, "scalter_checkpoint.pt"),
     )
     
     # ============================================
@@ -1231,17 +1230,13 @@ if __name__ == "__main__":
     print(f"  - mean_u.tsv, mean_m.tsv, mean_merge.tsv      (NB/ZINB mean)")
     print(f"  - latent_mu.tsv               (For clustering)")
     print(f"  - latent_std.tsv              (Uncertainty)")
-    print(f"  - scvi_poe_weights.pt         (Model weights)")
-    print(f"  - scvi_poe_model_checkpoint.pt (Model weights + config)")
+    print(f"  - scalter_weights.pt         (Model weights)")
+    print(f"  - scalter_checkpoint.pt (Model weights + config)")
     print(f"  - run_config.json             (Run configuration)")
     print(f"  - training_history.json       (Training log)")
     
-    print(f"\n📚 References:")
-    print(f"  - scVI: Lopez et al., Nature Methods 2018")
-    print(f"  - scvi-tools: https://github.com/scverse/scvi-tools")
-    
     print(f"\n🎯 Key features:")
-    print(f"  - Standard scVI architecture")
+    print(f"  - Standard latent count architecture")
     print(f"  - Product-of-Experts fusion")
     print(f"  - Inputs: unique, multi, and merge views")
     print(f"  - {model.gene_likelihood.upper()} likelihood")

@@ -2,21 +2,18 @@
 """
 Accelerated 10x U/M TE counting for scALTER human PBMC8k data.
 
-This keeps the counting policy from 1_10x_extract_u_m_counts_by_cb_parallel.py:
+This keeps the counting policy used by the original scALTER count extractor:
   - feature = gene_id from repeat_region rows in the TE GTF
   - valid cell barcode filtering by per-sample *_barcodes.txt
   - UMI deduplication by (cell, TE, UMI)
   - U matrix: NH == 1 and the alignment overlaps exactly one TE feature
   - M matrix: all other TE-overlapping alignments, weighted by 1 / n_overlapped_TE
 
-The expensive read/TE overlap step is moved out of Python and into a
-samtools -> bedtools bamtobed -> bedtools intersect pipeline, scheduled as
-sample-by-chromosome tasks. Per-sample reducers then apply the original U/M
-and UMI logic to the hit streams.
+The expensive read/TE overlap step is delegated to standard command-line genomics tools and scheduled as sample-by-chromosome tasks. Per-sample reducers then apply the original U/M and UMI logic to the hit streams.
 """
 
 # Example production run:
-# nohup /usr/bin/time -v bash -c 'mkdir -p /qiyang/GitHub/scALTER/results/pbmc8k/logs; date; /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/1_extract_u_m_counts_by_cb_bedtools_parallel.py --workers 32 --reducer-workers 1; date' > /qiyang/GitHub/scALTER/results/pbmc8k/logs/1_extract_u_m_counts_by_cb_bedtools_parallel.log 2>&1 &
+# /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/extract_counts.py --workers 32 --reducer-workers 1
 
 import argparse
 import gzip
@@ -53,7 +50,7 @@ GTF_FILE = None  # None = choose from GTF_BY_LEVEL[TE_LEVEL]
 
 # Output directories
 OUTPUT_DIR = None
-# None = /qiyang/TEexp/Data/scALTER/human_pbmc8k/my_<TE_LEVEL>/1_<TE_LEVEL>_u_m
+# None = /qiyang/GitHub/scALTER/results/pbmc8k/my_<TE_LEVEL>/counts
 TMP_DIR = None
 # None = <OUTPUT_DIR>/_tmp_bedtools
 
@@ -68,7 +65,7 @@ CELL_TAG = "CB"
 UMI_TAG = "UB"
 MIN_MAPQ = 0
 
-# Parallelism
+# Concurrency
 WORKERS = None
 # None = max(1, min(cpu_count() - 4, 32))
 REDUCER_WORKERS = None
@@ -87,7 +84,7 @@ CANONICAL_GTF_TO_BED = False
 def default_output_dir(te_level):
     return (
         f"/qiyang/GitHub/scALTER/results/pbmc8k/"
-        f"my_{te_level}/1_{te_level}_u_m"
+        f"my_{te_level}/counts"
     )
 
 
@@ -539,7 +536,7 @@ def signal_handler(sig, frame):
 
 def build_arg_parser():
     parser = argparse.ArgumentParser(
-        description="Fast bedtools-backed PBMC8k 10x U/M TE counter."
+        description="Fast PBMC8k 10x U/M TE counter."
     )
     parser.add_argument("--te-level", choices=["subfamily", "locus"], default=TE_LEVEL)
     parser.add_argument("--sample-prefix", default=SAMPLE_PREFIX)
@@ -549,7 +546,7 @@ def build_arg_parser():
     parser.add_argument(
         "--output-dir",
         default=OUTPUT_DIR,
-        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/pbmc8k/my_<level>/1_<level>_u_m when OUTPUT_DIR is None",
+        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/pbmc8k/my_<level>/counts when OUTPUT_DIR is None",
     )
     parser.add_argument(
         "--tmp-dir",
@@ -607,7 +604,7 @@ def main():
     reducer_workers = args.reducer_workers or max(1, min(8, workers))
 
     print("=" * 80)
-    print("Fast PBMC8k 10x U/M TE counting with bedtools-backed overlap")
+    print("Fast PBMC8k 10x U/M TE counting")
     print("=" * 80)
     print(f"Sample prefix:   {args.sample_prefix}")
     print(f"BAM:             {args.bam}")

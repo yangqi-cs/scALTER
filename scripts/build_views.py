@@ -5,12 +5,12 @@
 Build aligned unique/multi/merge sparse matrices from scALTER long TSV output.
 
 Input:
-  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/1_subfamily_u_m/
+  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/counts/
     pbmc8k_unique.tsv
     pbmc8k_multi.tsv
 
 Output:
-  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/2_subfamily_u_m_aligned/
+  /qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily/views/
     aligned_npz/
       barcodes.tsv
       features.tsv
@@ -32,7 +32,7 @@ The h5ad stores:
 """
 
 # Example production run:
-# nohup /usr/bin/time -v bash -c 'mkdir -p /qiyang/GitHub/scALTER/results/pbmc8k/logs; date; /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/2_build_u_m_views.py; date' > /qiyang/GitHub/scALTER/results/pbmc8k/logs/2_build_u_m_views.log 2>&1 &
+# nohup /usr/bin/time -v bash -c 'mkdir -p /qiyang/GitHub/scALTER/results/pbmc8k/logs; date; /qiyang/Anaconda/conda/envs/teexp/bin/python -u /qiyang/GitHub/scALTER/scripts/build_views.py; date' > /qiyang/GitHub/scALTER/results/pbmc8k/logs/build_views.log 2>&1 &
 
 import json
 import argparse
@@ -53,12 +53,11 @@ from scipy import sparse
 TE_LEVEL = "subfamily"
 SAMPLE_PREFIX = "pbmc8k"
 
-# Existing output path from 1_extract_u_m_counts_by_cb_bedtools_parallel.py.
+# Existing output path from scripts/extract_counts.py.
 BASE_DIR = f"/qiyang/GitHub/scALTER/results/pbmc8k/my_{TE_LEVEL}"
-INPUT_DIR = os.path.join(BASE_DIR, f"1_{TE_LEVEL}_u_m")
+INPUT_DIR = os.path.join(BASE_DIR, f"counts")
 
-# Must start with "2_" as requested.
-OUTPUT_DIR = os.path.join(BASE_DIR, f"2_{TE_LEVEL}_u_m_aligned")
+OUTPUT_DIR = os.path.join(BASE_DIR, "views")
 ALIGNED_NPZ_DIR = os.path.join(OUTPUT_DIR, "aligned_npz")
 H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
 
@@ -110,8 +109,8 @@ def configure_from_args(args):
     TE_LEVEL = args.te_level
     SAMPLE_PREFIX = args.sample_prefix
     BASE_DIR = args.base_dir or f"/qiyang/GitHub/scALTER/results/pbmc8k/my_{TE_LEVEL}"
-    INPUT_DIR = args.input_dir or os.path.join(BASE_DIR, f"1_{TE_LEVEL}_u_m")
-    OUTPUT_DIR = args.output_dir or os.path.join(BASE_DIR, f"2_{TE_LEVEL}_u_m_aligned")
+    INPUT_DIR = args.input_dir or os.path.join(BASE_DIR, f"counts")
+    OUTPUT_DIR = args.output_dir or os.path.join(BASE_DIR, f"views")
     ALIGNED_NPZ_DIR = os.path.join(OUTPUT_DIR, "aligned_npz")
     H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
     UNIQUE_TSV = args.unique_tsv or os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_unique.tsv")
@@ -273,7 +272,7 @@ def save_h5ad(obs, var, unique_mat, multi_mat, merge_mat, manifest):
 def build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat):
     return {
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "script": "scripts/2_build_u_m_views.py",
+        "script": "scripts/build_views.py",
         "python": sys.version.replace("\n", " "),
         "platform": platform.platform(),
         "te_level": TE_LEVEL,

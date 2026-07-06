@@ -1,56 +1,67 @@
 # scALTER
 
-This repository contains a runnable three-step scALTER pipeline organized from the PBMC8k reference scripts.
+This repository provides a single-command scALTER pipeline for transposable element count extraction, view construction, and model training.
 
-## Layout
+## Scripts
 
-- `scripts/1_extract_u_m_counts_by_cb_bedtools_parallel.py`
-  Extracts TE unique and multi counts from a 10x BAM using `samtools` and `bedtools`.
-- `scripts/2_build_u_m_views.py`
-  Converts long `*_unique.tsv` and `*_multi.tsv` files into aligned sparse matrices.
-- `scripts/3_train_scvi_poe_unique_multi_merge_best_model.py`
-  Trains the three-view scVI-PoE model using unique, multi, and merge views.
-- `scripts/run_scalter_pbmc8k.sh`
-  Runs the three steps sequentially with PBMC8k defaults.
+- `scripts/scALTER.py`
+  Main pipeline entry point. Runs the three steps in order and exposes the commonly tuned parameters.
+- `scripts/extract_counts.py`
+  Extracts unique and multi TE count tables from a 10x BAM.
+- `scripts/build_views.py`
+  Builds aligned unique, multi, and merge sparse matrix views.
+- `scripts/train_model.py`
+  Trains the scALTER model and writes latent representations, reconstructed means, and checkpoints.
 
-## Default Run
+## Quick Start
 
 ```bash
-bash /qiyang/GitHub/scALTER/scripts/run_scalter_pbmc8k.sh
+/qiyang/Anaconda/conda/envs/teexp/bin/python /qiyang/GitHub/scALTER/scripts/scALTER.py
 ```
 
-The default input BAM and whitelist are inherited from the PBMC8k reference workflow:
+The PBMC8k defaults are:
 
 - BAM: `/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Aligned.sortedByCoord.out.bam`
 - whitelist: `/qiyang/TEexp/Data/IRescue/human_pbmc8k/star_output/pbmc8k/pbmc8k_Solo.out/Gene/filtered/barcodes.tsv`
 - TE GTF: `/qiyang/TEexp/Data/dataset_human/hg38/hg38_TE_subfamily.exclusive.gtf`
+- results: `/qiyang/GitHub/scALTER/results/pbmc8k/my_subfamily`
 
-## Preserved Outputs
-
-Step 1 keeps BAM-derived long-format count inputs:
-
-- `results/pbmc8k/my_subfamily/1_subfamily_u_m/pbmc8k_unique.tsv`
-- `results/pbmc8k/my_subfamily/1_subfamily_u_m/pbmc8k_multi.tsv`
-
-Step 2 keeps the three model input views:
-
-- `results/pbmc8k/my_subfamily/2_subfamily_u_m_aligned/aligned_npz/unique.npz`
-- `results/pbmc8k/my_subfamily/2_subfamily_u_m_aligned/aligned_npz/multi.npz`
-- `results/pbmc8k/my_subfamily/2_subfamily_u_m_aligned/aligned_npz/merge.npz`
-- `results/pbmc8k/my_subfamily/2_subfamily_u_m_aligned/h5ad/pbmc8k_subfamily_u_m_aligned.h5ad`
-
-Step 3 keeps model outputs:
-
-- `results/pbmc8k/my_subfamily/3_cross_view/1_7_scvi_poe_unique_multi_merge_best_model/scvi_poe_weights.pt`
-- `results/pbmc8k/my_subfamily/3_cross_view/1_7_scvi_poe_unique_multi_merge_best_model/scvi_poe_model_checkpoint.pt`
-- `results/pbmc8k/my_subfamily/3_cross_view/1_7_scvi_poe_unique_multi_merge_best_model/training_history.json`
-- `results/pbmc8k/my_subfamily/3_cross_view/1_7_scvi_poe_unique_multi_merge_best_model/run_config.json`
-- `mean_u.tsv`, `mean_m.tsv`, `mean_merge.tsv`, `latent_mu.tsv`, and `latent_std.tsv`
-
-## Common Overrides
+## Example With Parameters
 
 ```bash
-WORKERS=48 REDUCER_WORKERS=2 bash /qiyang/GitHub/scALTER/scripts/run_scalter_pbmc8k.sh
+/qiyang/Anaconda/conda/envs/teexp/bin/python /qiyang/GitHub/scALTER/scripts/scALTER.py \
+  --workers 48 \
+  --reducer-workers 2 \
+  --epochs 300 \
+  --n-latent 32 \
+  --batch-size 128 \
+  --learning-rate 1e-3
 ```
 
-Each Python script also exposes `--help` for dataset-specific paths and training parameters.
+## Pipeline Outputs
+
+Step 1 writes BAM-derived count tables:
+
+- `counts/pbmc8k_unique.tsv`
+- `counts/pbmc8k_multi.tsv`
+
+Step 2 writes the three preserved model input views:
+
+- `views/aligned_npz/unique.npz`
+- `views/aligned_npz/multi.npz`
+- `views/aligned_npz/merge.npz`
+- `views/h5ad/pbmc8k_subfamily_u_m_aligned.h5ad`
+
+Step 3 writes model outputs:
+
+- `model/scalter_weights.pt`
+- `model/scalter_checkpoint.pt`
+- `model/training_history.json`
+- `model/run_config.json`
+- `model/mean_u.tsv`
+- `model/mean_m.tsv`
+- `model/mean_merge.tsv`
+- `model/latent_mu.tsv`
+- `model/latent_std.tsv`
+
+Each step script can still be run independently, but `scripts/scALTER.py` is the recommended entry point.
