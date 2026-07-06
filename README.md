@@ -117,19 +117,6 @@ model/latent_mu.tsv
 model/latent_std.tsv
 ```
 
-## FAQs
-Q: Which BAM tags does scALTER use by default?
-
-> scALTER uses `CB` for cell barcodes and `UB` for UMIs by default. You can change them with `--cell-tag` and `--umi-tag`.
-
-Q: What does scALTER check before count extraction?
-
-> Before running count extraction, scALTER checks that the BAM file exists, has a `.bam` suffix, can be opened by `pysam`, and contains the requested cell and UMI tags in mapped reads.
-
-Q: Can I skip finished steps?
-
-> Yes. Use `--skip-counts`, `--skip-views`, or `--skip-model` to reuse existing intermediate outputs.
-
 ## Contact
 :e-mail: **Yang Qi** (yang.qi@mail.nwpu.edu.cn)
 
