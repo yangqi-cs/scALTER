@@ -51,7 +51,7 @@ TMP_DIR = None
 # None = /qiyang/GitHub/scALTER/results/tmp/bedtools for the default output
 
 # Tool paths
-DEFAULT_ENV_BIN = None
+DEFAULT_ENV_BIN = os.path.dirname(sys.executable)
 SAMTOOLS = None  # None = auto-detect from the active environment/PATH
 BEDTOOLS = None  # None = auto-detect from the active environment/PATH
 AWK = None       # None = auto-detect gawk/awk
@@ -116,6 +116,39 @@ def get_bam_chromosomes(bam_file):
 def get_bam_chrom_order(bam_file):
     with pysam.AlignmentFile(bam_file, "rb") as bam:
         return list(bam.references)
+
+
+def bam_has_index(bam_file):
+    candidates = [
+        bam_file + ".bai",
+        bam_file + ".csi",
+    ]
+    if bam_file.endswith(".bam"):
+        candidates.extend([
+            bam_file[:-4] + ".bai",
+            bam_file[:-4] + ".csi",
+        ])
+    return any(os.path.exists(path) for path in candidates)
+
+
+def prepare_indexed_bam(bam_file, tmp_dir, samtools, threads):
+    if bam_has_index(bam_file):
+        return bam_file
+
+    index_dir = os.path.join(tmp_dir, "bam_index")
+    os.makedirs(index_dir, exist_ok=True)
+    linked_bam = os.path.join(index_dir, os.path.basename(bam_file))
+    if os.path.lexists(linked_bam):
+        os.remove(linked_bam)
+    os.symlink(os.path.abspath(bam_file), linked_bam)
+
+    print("Input BAM index not found; creating a temporary BAM index ...")
+    index_threads = max(1, min(int(threads or 1), 8))
+    run_cmd(
+        f"{shell_quote(samtools)} index -@ {index_threads} "
+        f"{shell_quote(linked_bam)}"
+    )
+    return linked_bam
 
 
 def parse_gene_id(attrs):
@@ -673,6 +706,14 @@ def main():
     if not samples:
         print("All requested samples already have outputs. Nothing to do.")
         return
+
+    indexed_bam = prepare_indexed_bam(
+        samples[0]["bam_file"],
+        tmp_dir,
+        samtools,
+        threads,
+    )
+    samples[0]["bam_file"] = indexed_bam
 
     valid_chroms = get_bam_chromosomes(samples[0]["bam_file"])
     chrom_order = get_bam_chrom_order(samples[0]["bam_file"])

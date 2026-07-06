@@ -31,7 +31,7 @@ def run_step(step_name, cmd):
     print("\n" + "=" * 80)
     print(step_name)
     print("=" * 80)
-    print(" ".join(cmd))
+    sys.stdout.flush()
     subprocess.run(cmd, check=True)
 
 
