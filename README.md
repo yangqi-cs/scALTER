@@ -1,39 +1,89 @@
 # scALTER
 
-This repository provides a single-command scALTER pipeline for transposable element count extraction, view construction, and model training.
+## Introduction
+scALTER is a framework for single-cell TE expression reconstruction and latent representation learning.
 
-## Scripts
+The workflow figure is available here: [figures/workflow.pdf](figures/workflow.pdf).
 
-- `scripts/scALTER.py`
-  Main pipeline entry point. Runs the three steps in order and exposes the commonly tuned parameters.
-- `scripts/extract_counts.py`
-  Extracts unique and multi TE count tables from a 10x BAM.
-- `scripts/build_views.py`
-  Builds aligned unique, multi, and merge sparse matrix views.
-- `scripts/train_model.py`
-  Trains the scALTER model and writes latent representations, reconstructed means, and checkpoints.
+## Installation
+Follow the steps below to set up scALTER:
 
-## Quick Start
+#### 1. Clone the Repository
 
-Activate the conda environment that contains scALTER dependencies, then run:
+Retrieve the latest version of scALTER from the GitHub repository:
 
 ```bash
-python /qiyang/GitHub/scALTER/scripts/scALTER.py \
+git clone https://github.com/yangqi-cs/scALTER.git
+cd scALTER
+```
+
+#### 2. Set Up the Conda Environment
+
+Create and activate the conda environment:
+
+```bash
+conda env create -f env.yml
+conda activate scALTER
+```
+
+## Usage
+- #### scripts/scALTER.py
+
+Run the full scALTER pipeline, including count extraction, view construction, and model training. Required inputs:
+
+```text
+--bam                  Input alignment file in BAM format
+--whitelist            Cell barcode whitelist, usually filtered barcodes.tsv
+--te-annotation-gtf    TE annotation file in GTF format
+```
+
+Common options:
+
+```text
+--result-root          Root output directory for counts/, views/, and model/
+--cell-tag             BAM tag for cell barcodes
+--umi-tag              BAM tag for UMIs
+--sample-prefix        Prefix used for count table names
+--threads              Number of threads for count extraction
+--reducer-threads      Number of threads for count table reduction
+--align-mode           How to align unique and multi matrices: union or intersection
+--count-likelihood     Count likelihood used by the model: nb or zinb
+--n-hidden             Hidden dimension
+--n-latent             Latent representation dimension
+--n-layers             Number of neural network layers
+--dropout-rate         Dropout rate
+--kl-weight            KL loss weight
+--learning-rate        Learning rate
+--batch-size           Training batch size
+--epochs               Maximum number of training epochs
+```
+
+- #### scripts/extract_counts.py
+
+Extract unique and multi TE count tables from a BAM file.
+
+- #### scripts/build_views.py
+
+Build aligned unique, multi, and merge sparse matrix views.
+
+- #### scripts/train_model.py
+
+Train the scALTER model and export reconstructed means, latent representations, and checkpoints.
+
+## Examples
+Run the full pipeline:
+
+```bash
+python scripts/scALTER.py \
   --bam /path/to/alignments.bam \
   --whitelist /path/to/barcodes.tsv \
   --te-annotation-gtf /path/to/te_annotation.gtf
 ```
 
-By default, outputs are written under:
-
-```text
-/qiyang/GitHub/scALTER/results/
-```
-
-## Example With Parameters
+Run with commonly tuned parameters:
 
 ```bash
-python /qiyang/GitHub/scALTER/scripts/scALTER.py \
+python scripts/scALTER.py \
   --bam /path/to/alignments.bam \
   --whitelist /path/to/barcodes.tsv \
   --te-annotation-gtf /path/to/te_annotation.gtf \
@@ -47,38 +97,40 @@ python /qiyang/GitHub/scALTER/scripts/scALTER.py \
   --learning-rate 1e-3
 ```
 
-## Required Inputs
+By default, scALTER writes results under:
 
-- `--bam`: input alignment file in BAM format.
-- `--whitelist`: cell barcode whitelist, usually the filtered 10x `barcodes.tsv`.
-- `--te-annotation-gtf`: TE annotation file in GTF format.
+```text
+/qiyang/GitHub/scALTER/results/
+```
 
-Before running the count extraction step, `scripts/scALTER.py` opens the BAM and checks that it is readable and that the requested cell and UMI tags are present in mapped reads.
+The main output files include:
 
-## Pipeline Outputs
+```text
+counts/scalter_unique.tsv
+counts/scalter_multi.tsv
+views/aligned_npz/unique.npz
+views/aligned_npz/multi.npz
+views/aligned_npz/merge.npz
+model/scalter_weights.pt
+model/scalter_checkpoint.pt
+model/latent_mu.tsv
+model/latent_std.tsv
+```
 
-Step 1 writes BAM-derived count tables:
+## FAQs
+Q: Which BAM tags does scALTER use by default?
 
-- `counts/scalter_unique.tsv`
-- `counts/scalter_multi.tsv`
+> scALTER uses `CB` for cell barcodes and `UB` for UMIs by default. You can change them with `--cell-tag` and `--umi-tag`.
 
-Step 2 writes the three preserved model input views:
+Q: What does scALTER check before count extraction?
 
-- `views/aligned_npz/unique.npz`
-- `views/aligned_npz/multi.npz`
-- `views/aligned_npz/merge.npz`
-- `views/h5ad/scalter_subfamily_u_m_aligned.h5ad`
+> Before running count extraction, scALTER checks that the BAM file exists, has a `.bam` suffix, can be opened by `pysam`, and contains the requested cell and UMI tags in mapped reads.
 
-Step 3 writes model outputs:
+Q: Can I skip finished steps?
 
-- `model/scalter_weights.pt`
-- `model/scalter_checkpoint.pt`
-- `model/training_history.json`
-- `model/run_config.json`
-- `model/mean_u.tsv`
-- `model/mean_m.tsv`
-- `model/mean_merge.tsv`
-- `model/latent_mu.tsv`
-- `model/latent_std.tsv`
+> Yes. Use `--skip-counts`, `--skip-views`, or `--skip-model` to reuse existing intermediate outputs.
 
-Each step script can still be run independently, but `scripts/scALTER.py` is the recommended entry point.
+## Contact
+:e-mail: **Yang Qi** (yang.qi@mail.nwpu.edu.cn)
+
+School of Computer Science, Northwestern Polytechnical University, Xi’an, Shaanxi 710072, China
