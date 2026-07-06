@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+
+# Runtime outputs are preserved locally but should not be committed by default.
+results/
+*.log
