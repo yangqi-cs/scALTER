@@ -4,7 +4,7 @@
 scALTER is a framework for single-cell TE expression reconstruction and latent representation learning.
 
 <div align="center">
-<img src="figures/workflow.png" width="100%">
+<img src="figures/workflow.png" width="95%">
 </div>
 
 ## Installation
@@ -42,10 +42,9 @@ Run the full scALTER pipeline, including count extraction, view construction, an
 Common options:
 
 ```text
---result-root          Root output directory for counts/, views/, and model/
+--result-root          Root output directory for views/ and model/
 --cell-tag             BAM tag for cell barcodes
 --umi-tag              BAM tag for UMIs
---sample-prefix        Prefix used for count table names
 --threads              Number of threads for count extraction
 --reducer-threads      Number of threads for count table reduction
 --align-mode           How to align unique and multi matrices: union or intersection
@@ -89,7 +88,6 @@ python scripts/scALTER.py \
   --bam /path/to/alignments.bam \
   --whitelist /path/to/barcodes.tsv \
   --te-annotation-gtf /path/to/te_annotation.gtf \
-  --sample-prefix sample1 \
   --threads 48 \
   --reducer-threads 2 \
   --count-likelihood nb \
@@ -108,15 +106,18 @@ By default, scALTER writes results under:
 The main output files include:
 
 ```text
-counts/scalter_unique.tsv
-counts/scalter_multi.tsv
-views/aligned_npz/unique.npz
-views/aligned_npz/multi.npz
-views/aligned_npz/merge.npz
+views/raw_exp/unique.npz
+views/raw_exp/multi.npz
+views/raw_exp/merge.npz
+views/raw_exp/barcodes.tsv
+views/raw_exp/features.tsv
 model/scalter_weights.pt
 model/scalter_checkpoint.pt
-model/latent_mu.tsv
-model/latent_std.tsv
+model/recon_exp/mean_u.tsv
+model/recon_exp/mean_m.tsv
+model/recon_exp/mean_a.tsv
+model/latent/latent_mu.tsv
+model/latent/latent_std.tsv
 ```
 
 ## Contact

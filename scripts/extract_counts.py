@@ -39,14 +39,14 @@ import pysam
 TE_LEVEL = "subfamily"  # "subfamily" or "locus"
 
 # Input files
-SAMPLE_PREFIX = "scalter"
+SAMPLE_NAME = "scalter"
 BAM = None
 WHITELIST = None
 TE_ANNOTATION_GTF = None
 
 # Output directories
 OUTPUT_DIR = None
-# None = /qiyang/GitHub/scALTER/results/counts
+# None = /qiyang/GitHub/scALTER/results/_tmp_counts
 TMP_DIR = None
 # None = <OUTPUT_DIR>/_tmp_bedtools
 
@@ -78,7 +78,7 @@ CANONICAL_GTF_TO_BED = False
 
 
 def default_output_dir():
-    return "/qiyang/GitHub/scALTER/results/counts"
+    return "/qiyang/GitHub/scALTER/results/_tmp_counts"
 
 
 def resolve_tool(name, explicit=None):
@@ -450,9 +450,9 @@ def write_long_tsv(output_file, counts, float_values=False):
 
 def reduce_sample(args):
     sample, hit_files, output_dir, enable_umi_dedup, skip_existing = args
-    prefix = sample["prefix"]
-    unique_output = os.path.join(output_dir, f"{prefix}_unique.tsv")
-    multi_output = os.path.join(output_dir, f"{prefix}_multi.tsv")
+    sample_name = sample["name"]
+    unique_output = os.path.join(output_dir, "unique.tsv")
+    multi_output = os.path.join(output_dir, "multi.tsv")
 
     if (
         skip_existing
@@ -461,7 +461,8 @@ def reduce_sample(args):
     ):
         return {
             "success": True,
-            "prefix": prefix,
+            "prefix": sample_name,
+            "sample": sample_name,
             "skipped": True,
             "unique_file": unique_output,
             "multi_file": multi_output,
@@ -508,7 +509,8 @@ def reduce_sample(args):
     elapsed = timedelta(seconds=int(time.time() - start_time))
     return {
         "success": True,
-        "prefix": prefix,
+        "prefix": sample_name,
+        "sample": sample_name,
         "skipped": False,
         "unique_file": unique_output,
         "multi_file": multi_output,
@@ -526,14 +528,13 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Fast 10x U/M TE counter."
     )
-    parser.add_argument("--sample-prefix", default=SAMPLE_PREFIX)
     parser.add_argument("--bam", required=True)
     parser.add_argument("--whitelist", required=True)
     parser.add_argument("--te-annotation-gtf", required=True)
     parser.add_argument(
         "--output-dir",
         default=OUTPUT_DIR,
-        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/counts when OUTPUT_DIR is None",
+        help="Default: OUTPUT_DIR, or /qiyang/GitHub/scALTER/results/_tmp_counts when OUTPUT_DIR is None",
     )
     parser.add_argument(
         "--tmp-dir",
@@ -593,7 +594,7 @@ def main():
     print("=" * 80)
     print("Fast 10x U/M TE counting")
     print("=" * 80)
-    print(f"Sample prefix:   {args.sample_prefix}")
+    print(f"Sample:          {SAMPLE_NAME}")
     print(f"BAM:             {args.bam}")
     print(f"Whitelist:       {args.whitelist}")
     print(f"GTF:             {gtf_file}")
@@ -614,7 +615,8 @@ def main():
 
     samples = [
         {
-            "prefix": args.sample_prefix,
+            "name": SAMPLE_NAME,
+            "prefix": SAMPLE_NAME,
             "bam_file": args.bam,
             "barcode_file": args.whitelist,
         }
@@ -623,8 +625,8 @@ def main():
     completed_samples = []
     active_samples = []
     for sample in samples:
-        unique_output = os.path.join(output_dir, f"{sample['prefix']}_unique.tsv")
-        multi_output = os.path.join(output_dir, f"{sample['prefix']}_multi.tsv")
+        unique_output = os.path.join(output_dir, "unique.tsv")
+        multi_output = os.path.join(output_dir, "multi.tsv")
         if (
             args.skip_existing
             and os.path.exists(unique_output)
@@ -639,7 +641,7 @@ def main():
     if completed_samples:
         print(
             f"Skipped {len(completed_samples)} samples with existing U/M outputs: "
-            + ", ".join(s["prefix"] for s in completed_samples)
+            + ", ".join(s["name"] for s in completed_samples)
         )
     print()
 

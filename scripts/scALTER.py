@@ -5,6 +5,7 @@ import argparse
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -99,7 +100,7 @@ def build_arg_parser():
     parser.add_argument(
         "--result-root",
         default=DEFAULT_RESULT_ROOT,
-        help="Root output directory. scALTER writes counts/, views/, and model/ under this path.",
+        help="Root output directory. scALTER writes views/ and model/ under this path.",
     )
 
     parser.add_argument(
@@ -125,7 +126,6 @@ def build_arg_parser():
     parser.add_argument("--awk", default=None)
     parser.add_argument("--cell-tag", default="CB")
     parser.add_argument("--umi-tag", default="UB")
-    parser.add_argument("--sample-prefix", default="scalter")
     parser.add_argument("--min-mapq", type=int, default=0)
     parser.add_argument("--threads", type=int, default=32)
     parser.add_argument("--reducer-threads", type=int, default=1)
@@ -164,54 +164,60 @@ def main():
 
     script_dir = Path(__file__).resolve().parent
     result_root = Path(args.result_root)
-    counts_dir = result_root / "counts"
     views_dir = result_root / "views"
     model_dir = result_root / "model"
+
+    if args.skip_counts and not args.skip_views:
+        raise ValueError(
+            "--skip-counts cannot be used when views need to be built because "
+            "count TSV files are treated as temporary intermediates."
+        )
 
     if not args.skip_counts:
         validate_input_files(args)
 
-    if not args.skip_counts:
-        cmd = [
-            args.python,
-            str_path(script_dir / "extract_counts.py"),
-            "--sample-prefix", args.sample_prefix,
-            "--bam", args.bam,
-            "--whitelist", args.whitelist,
-            "--te-annotation-gtf", args.te_annotation_gtf,
-            "--output-dir", str_path(counts_dir),
-            "--cell-tag", args.cell_tag,
-            "--umi-tag", args.umi_tag,
-            "--min-mapq", str(args.min_mapq),
-            "--threads", str(args.threads),
-            "--reducer-threads", str(args.reducer_threads),
-        ]
-        add_optional(cmd, "--tmp-dir", args.tmp_dir)
-        add_optional(cmd, "--samtools", args.samtools)
-        add_optional(cmd, "--bedtools", args.bedtools)
-        add_optional(cmd, "--awk", args.awk)
-        add_bool(cmd, "--no-skip-existing", args.overwrite_counts)
-        add_bool(cmd, "--reuse-hits", args.reuse_hits)
-        add_bool(cmd, "--keep-tmp", args.keep_count_tmp)
-        add_bool(cmd, "--canonical-gtf-to-bed", args.canonical_gtf_to_bed)
-        run_step("Step 1/3: extracting unique and multi counts", cmd)
+    with tempfile.TemporaryDirectory(prefix="scalter_counts_") as count_tmp:
+        count_tmp_dir = Path(count_tmp)
 
-    if not args.skip_views:
-        cmd = [
-            args.python,
-            str_path(script_dir / "build_views.py"),
-            "--sample-prefix", args.sample_prefix,
-            "--input-dir", str_path(counts_dir),
-            "--output-dir", str_path(views_dir),
-            "--align-mode", args.align_mode,
-        ]
-        run_step("Step 2/3: building aligned input views", cmd)
+        if not args.skip_counts:
+            cmd = [
+                args.python,
+                str_path(script_dir / "extract_counts.py"),
+                "--bam", args.bam,
+                "--whitelist", args.whitelist,
+                "--te-annotation-gtf", args.te_annotation_gtf,
+                "--output-dir", str_path(count_tmp_dir),
+                "--cell-tag", args.cell_tag,
+                "--umi-tag", args.umi_tag,
+                "--min-mapq", str(args.min_mapq),
+                "--threads", str(args.threads),
+                "--reducer-threads", str(args.reducer_threads),
+            ]
+            add_optional(cmd, "--tmp-dir", args.tmp_dir)
+            add_optional(cmd, "--samtools", args.samtools)
+            add_optional(cmd, "--bedtools", args.bedtools)
+            add_optional(cmd, "--awk", args.awk)
+            add_bool(cmd, "--no-skip-existing", args.overwrite_counts)
+            add_bool(cmd, "--reuse-hits", args.reuse_hits)
+            add_bool(cmd, "--keep-tmp", args.keep_count_tmp)
+            add_bool(cmd, "--canonical-gtf-to-bed", args.canonical_gtf_to_bed)
+            run_step("Step 1/3: extracting unique and multi counts", cmd)
+
+        if not args.skip_views:
+            cmd = [
+                args.python,
+                str_path(script_dir / "build_views.py"),
+                "--input-dir", str_path(count_tmp_dir),
+                "--output-dir", str_path(views_dir),
+                "--align-mode", args.align_mode,
+            ]
+            run_step("Step 2/3: building aligned input views", cmd)
 
     if not args.skip_model:
         cmd = [
             args.python,
             str_path(script_dir / "train_model.py"),
-            "--data-dir", str_path(views_dir / "aligned_npz"),
+            "--data-dir", str_path(views_dir / "raw_exp"),
             "--output-dir", str_path(model_dir),
             "--count-likelihood", args.count_likelihood,
             "--n-hidden", str(args.n_hidden),

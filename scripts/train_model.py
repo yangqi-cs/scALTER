@@ -23,7 +23,7 @@ from torch.distributions import Normal, kl_divergence as kl
 te_level = "subfamily"
 
 # Default data produced by scripts/build_views.py
-DATA_DIR = "/qiyang/GitHub/scALTER/results/views/aligned_npz"
+DATA_DIR = "/qiyang/GitHub/scALTER/results/views/raw_exp"
 OUTPUT_DIR = "/qiyang/GitHub/scALTER/results/model"
 
 UNIQUE_NPZ = "unique.npz"
@@ -942,6 +942,10 @@ class ScalterTrainer:
         to GPU memory at once.
         """
         self.model.eval()
+        recon_dir = os.path.join(save_dir, "recon_exp")
+        latent_dir = os.path.join(save_dir, "latent")
+        os.makedirs(recon_dir, exist_ok=True)
+        os.makedirs(latent_dir, exist_ok=True)
 
         y_u = adata_u.raw.X.tocsr() if sparse.issparse(adata_u.raw.X) else np.asarray(adata_u.raw.X)
         y_m = adata_m.raw.X.tocsr() if sparse.issparse(adata_m.raw.X) else np.asarray(adata_m.raw.X)
@@ -957,19 +961,19 @@ class ScalterTrainer:
         feature_names = adata_u.var_names.values.astype(str)
 
         mean_u_mm = np.memmap(
-            os.path.join(save_dir, "mean_u.tmp.memmap"),
+            os.path.join(recon_dir, "mean_u.tmp.memmap"),
             dtype="float32",
             mode="w+",
             shape=(n_cells, n_features),
         )
         mean_m_mm = np.memmap(
-            os.path.join(save_dir, "mean_m.tmp.memmap"),
+            os.path.join(recon_dir, "mean_m.tmp.memmap"),
             dtype="float32",
             mode="w+",
             shape=(n_cells, n_features),
         )
         mean_merge_mm = np.memmap(
-            os.path.join(save_dir, "mean_merge.tmp.memmap"),
+            os.path.join(recon_dir, "mean_a.tmp.memmap"),
             dtype="float32",
             mode="w+",
             shape=(n_cells, n_features),
@@ -1010,21 +1014,21 @@ class ScalterTrainer:
 
         self._write_memmap_feature_tsv(
             mean_u_mm,
-            os.path.join(save_dir, "mean_u.tsv"),
+            os.path.join(recon_dir, "mean_u.tsv"),
             feature_names,
             rownames,
             chunk_features=OUTPUT_CHUNK_FEATURES,
         )
         self._write_memmap_feature_tsv(
             mean_m_mm,
-            os.path.join(save_dir, "mean_m.tsv"),
+            os.path.join(recon_dir, "mean_m.tsv"),
             feature_names,
             rownames,
             chunk_features=OUTPUT_CHUNK_FEATURES,
         )
         self._write_memmap_feature_tsv(
             mean_merge_mm,
-            os.path.join(save_dir, "mean_merge.tsv"),
+            os.path.join(recon_dir, "mean_a.tsv"),
             feature_names,
             rownames,
             chunk_features=OUTPUT_CHUNK_FEATURES,
@@ -1032,23 +1036,24 @@ class ScalterTrainer:
 
         write_text_matrix(
             latent_mu,
-            os.path.join(save_dir, "latent_mu.tsv"),
+            os.path.join(latent_dir, "latent_mu.tsv"),
             rownames=rownames,
             transpose=False,
         )
         write_text_matrix(
             latent_std,
-            os.path.join(save_dir, "latent_std.tsv"),
+            os.path.join(latent_dir, "latent_std.tsv"),
             rownames=rownames,
             transpose=False,
         )
 
-        for tmp_name in ["mean_u.tmp.memmap", "mean_m.tmp.memmap", "mean_merge.tmp.memmap"]:
-            tmp_path = os.path.join(save_dir, tmp_name)
+        for tmp_name in ["mean_u.tmp.memmap", "mean_m.tmp.memmap", "mean_a.tmp.memmap"]:
+            tmp_path = os.path.join(recon_dir, tmp_name)
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-        print(f"Results saved to {save_dir}")
+        print(f"Reconstructed expression saved to {recon_dir}")
+        print(f"Latent representations saved to {latent_dir}")
 
 
 # ============================================
@@ -1210,9 +1215,9 @@ if __name__ == "__main__":
     print("="*70)
     print(f"Output directory: {OUTPUT_DIR}")
     print(f"\nGenerated files:")
-    print(f"  - mean_u.tsv, mean_m.tsv, mean_merge.tsv      (NB/ZINB mean)")
-    print(f"  - latent_mu.tsv               (For clustering)")
-    print(f"  - latent_std.tsv              (Uncertainty)")
+    print(f"  - recon_exp/mean_u.tsv, recon_exp/mean_m.tsv, recon_exp/mean_a.tsv")
+    print(f"  - latent/latent_mu.tsv        (For clustering)")
+    print(f"  - latent/latent_std.tsv       (Uncertainty)")
     print(f"  - scalter_weights.pt         (Model weights)")
     print(f"  - scalter_checkpoint.pt (Model weights + config)")
     print(f"  - run_config.json             (Run configuration)")

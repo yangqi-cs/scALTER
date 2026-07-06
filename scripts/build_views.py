@@ -5,13 +5,12 @@
 Build aligned unique/multi/merge sparse matrices from scALTER long TSV output.
 
 Input:
-  /qiyang/GitHub/scALTER/results/counts/
-    scalter_unique.tsv
-    scalter_multi.tsv
+  unique.tsv
+  multi.tsv
 
 Output:
   /qiyang/GitHub/scALTER/results/views/
-    aligned_npz/
+    raw_exp/
       barcodes.tsv
       features.tsv
       obs_metadata.csv
@@ -51,18 +50,18 @@ from scipy import sparse
 # User configuration
 # =========================
 TE_LEVEL = "subfamily"
-SAMPLE_PREFIX = "scalter"
+SAMPLE_NAME = "scalter"
 
 # Existing output path from scripts/extract_counts.py.
 BASE_DIR = "/qiyang/GitHub/scALTER/results"
-INPUT_DIR = os.path.join(BASE_DIR, f"counts")
+INPUT_DIR = os.path.join(BASE_DIR, "_tmp_counts")
 
 OUTPUT_DIR = os.path.join(BASE_DIR, "views")
-ALIGNED_NPZ_DIR = os.path.join(OUTPUT_DIR, "aligned_npz")
+RAW_EXP_DIR = os.path.join(OUTPUT_DIR, "raw_exp")
 H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
 
-UNIQUE_TSV = os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_unique.tsv")
-MULTI_TSV = os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_multi.tsv")
+UNIQUE_TSV = os.path.join(INPUT_DIR, "unique.tsv")
+MULTI_TSV = os.path.join(INPUT_DIR, "multi.tsv")
 
 # "union" keeps all cells/features from either matrix and fills missing values
 # with zero. This avoids dropping TE features that appear only in multi.
@@ -75,16 +74,15 @@ def build_arg_parser():
     parser = argparse.ArgumentParser(
         description="Build aligned scALTER U/M/merge matrix views from long TSV files."
     )
-    parser.add_argument("--sample-prefix", default=SAMPLE_PREFIX)
     parser.add_argument(
         "--input-dir",
         default=None,
-        help="Directory containing <sample>_unique.tsv and <sample>_multi.tsv.",
+        help="Directory containing unique.tsv and multi.tsv.",
     )
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Directory for aligned_npz/ and h5ad/ outputs.",
+        help="Directory for raw_exp/ and h5ad/ outputs.",
     )
     parser.add_argument("--unique-tsv", default=None)
     parser.add_argument("--multi-tsv", default=None)
@@ -97,16 +95,15 @@ def build_arg_parser():
 
 
 def configure_from_args(args):
-    global TE_LEVEL, SAMPLE_PREFIX, INPUT_DIR, OUTPUT_DIR
-    global ALIGNED_NPZ_DIR, H5AD_DIR, UNIQUE_TSV, MULTI_TSV, ALIGN_MODE
+    global TE_LEVEL, INPUT_DIR, OUTPUT_DIR
+    global RAW_EXP_DIR, H5AD_DIR, UNIQUE_TSV, MULTI_TSV, ALIGN_MODE
 
-    SAMPLE_PREFIX = args.sample_prefix
-    INPUT_DIR = args.input_dir or "/qiyang/GitHub/scALTER/results/counts"
+    INPUT_DIR = args.input_dir or "/qiyang/GitHub/scALTER/results/_tmp_counts"
     OUTPUT_DIR = args.output_dir or "/qiyang/GitHub/scALTER/results/views"
-    ALIGNED_NPZ_DIR = os.path.join(OUTPUT_DIR, "aligned_npz")
+    RAW_EXP_DIR = os.path.join(OUTPUT_DIR, "raw_exp")
     H5AD_DIR = os.path.join(OUTPUT_DIR, "h5ad")
-    UNIQUE_TSV = args.unique_tsv or os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_unique.tsv")
-    MULTI_TSV = args.multi_tsv or os.path.join(INPUT_DIR, f"{SAMPLE_PREFIX}_multi.tsv")
+    UNIQUE_TSV = args.unique_tsv or os.path.join(INPUT_DIR, "unique.tsv")
+    MULTI_TSV = args.multi_tsv or os.path.join(INPUT_DIR, "multi.tsv")
     ALIGN_MODE = args.align_mode
 
 
@@ -115,7 +112,7 @@ def ensure_inputs():
     if missing:
         raise FileNotFoundError("Missing input TSV files:\n" + "\n".join(missing))
 
-    os.makedirs(ALIGNED_NPZ_DIR, exist_ok=True)
+    os.makedirs(RAW_EXP_DIR, exist_ok=True)
     os.makedirs(H5AD_DIR, exist_ok=True)
 
 
@@ -209,8 +206,8 @@ def build_metadata(barcodes, features, unique_mat, multi_mat):
     obs.index.name = "barcode"
     obs["barcode"] = obs.index.astype(str)
     obs["barcode_core"] = obs["barcode"].str.replace(r"-\d+$", "", regex=True)
-    obs["batch"] = SAMPLE_PREFIX
-    obs["sample"] = SAMPLE_PREFIX
+    obs["batch"] = SAMPLE_NAME
+    obs["sample"] = SAMPLE_NAME
     obs["unique_counts"] = np.asarray(unique_mat.sum(axis=1)).ravel().astype(DTYPE)
     obs["multi_counts"] = np.asarray(multi_mat.sum(axis=1)).ravel().astype(DTYPE)
     obs["total_counts"] = obs["unique_counts"] + obs["multi_counts"]
@@ -231,16 +228,16 @@ def build_metadata(barcodes, features, unique_mat, multi_mat):
     return obs, var
 
 
-def save_aligned_npz(barcodes, features, obs, var, unique_mat, multi_mat, merge_mat, manifest):
-    print(f"Saving aligned NPZ output: {ALIGNED_NPZ_DIR}")
-    write_list(barcodes, os.path.join(ALIGNED_NPZ_DIR, "barcodes.tsv"))
-    write_list(features, os.path.join(ALIGNED_NPZ_DIR, "features.tsv"))
-    obs.to_csv(os.path.join(ALIGNED_NPZ_DIR, "obs_metadata.csv"))
-    var.to_csv(os.path.join(ALIGNED_NPZ_DIR, "var_metadata.csv"))
-    sparse.save_npz(os.path.join(ALIGNED_NPZ_DIR, "unique.npz"), unique_mat)
-    sparse.save_npz(os.path.join(ALIGNED_NPZ_DIR, "multi.npz"), multi_mat)
-    sparse.save_npz(os.path.join(ALIGNED_NPZ_DIR, "merge.npz"), merge_mat)
-    with open(os.path.join(ALIGNED_NPZ_DIR, "manifest.json"), "w") as f:
+def save_raw_exp(barcodes, features, obs, var, unique_mat, multi_mat, merge_mat, manifest):
+    print(f"Saving raw expression NPZ output: {RAW_EXP_DIR}")
+    write_list(barcodes, os.path.join(RAW_EXP_DIR, "barcodes.tsv"))
+    write_list(features, os.path.join(RAW_EXP_DIR, "features.tsv"))
+    obs.to_csv(os.path.join(RAW_EXP_DIR, "obs_metadata.csv"))
+    var.to_csv(os.path.join(RAW_EXP_DIR, "var_metadata.csv"))
+    sparse.save_npz(os.path.join(RAW_EXP_DIR, "unique.npz"), unique_mat)
+    sparse.save_npz(os.path.join(RAW_EXP_DIR, "multi.npz"), multi_mat)
+    sparse.save_npz(os.path.join(RAW_EXP_DIR, "merge.npz"), merge_mat)
+    with open(os.path.join(RAW_EXP_DIR, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2, sort_keys=True)
 
 
@@ -256,7 +253,7 @@ def save_h5ad(obs, var, unique_mat, multi_mat, merge_mat, manifest):
         "layers_multi": "fractional multi/ambiguous TE counts",
     }
 
-    out_file = os.path.join(H5AD_DIR, f"{SAMPLE_PREFIX}_{TE_LEVEL}_u_m_aligned.h5ad")
+    out_file = os.path.join(H5AD_DIR, f"{SAMPLE_NAME}_{TE_LEVEL}_u_m_aligned.h5ad")
     adata.write_h5ad(out_file, compression="gzip")
     return out_file
 
@@ -268,7 +265,7 @@ def build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat):
         "python": sys.version.replace("\n", " "),
         "platform": platform.platform(),
         "te_level": TE_LEVEL,
-        "sample_prefix": SAMPLE_PREFIX,
+        "sample": SAMPLE_NAME,
         "align_mode": ALIGN_MODE,
         "input_unique_tsv": UNIQUE_TSV,
         "input_multi_tsv": MULTI_TSV,
@@ -289,14 +286,14 @@ def build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat):
         },
         "dtype": str(DTYPE),
         "files": {
-            "barcodes": "aligned_npz/barcodes.tsv",
-            "features": "aligned_npz/features.tsv",
-            "obs_metadata": "aligned_npz/obs_metadata.csv",
-            "var_metadata": "aligned_npz/var_metadata.csv",
-            "unique_npz": "aligned_npz/unique.npz",
-            "multi_npz": "aligned_npz/multi.npz",
-            "merge_npz": "aligned_npz/merge.npz",
-            "h5ad": f"h5ad/{SAMPLE_PREFIX}_{TE_LEVEL}_u_m_aligned.h5ad",
+            "barcodes": "raw_exp/barcodes.tsv",
+            "features": "raw_exp/features.tsv",
+            "obs_metadata": "raw_exp/obs_metadata.csv",
+            "var_metadata": "raw_exp/var_metadata.csv",
+            "unique_npz": "raw_exp/unique.npz",
+            "multi_npz": "raw_exp/multi.npz",
+            "merge_npz": "raw_exp/merge.npz",
+            "h5ad": f"h5ad/{SAMPLE_NAME}_{TE_LEVEL}_u_m_aligned.h5ad",
         },
     }
 
@@ -306,10 +303,10 @@ def main():
     configure_from_args(args)
 
     print("=" * 90)
-    print("scALTER U/M TSV -> ALIGNED NPZ + H5AD")
+    print("scALTER U/M TSV -> RAW EXPRESSION + H5AD")
     print("=" * 90)
     print(f"TE_LEVEL:        {TE_LEVEL}")
-    print(f"SAMPLE_PREFIX:   {SAMPLE_PREFIX}")
+    print(f"SAMPLE:          {SAMPLE_NAME}")
     print(f"INPUT_DIR:       {INPUT_DIR}")
     print(f"OUTPUT_DIR:      {OUTPUT_DIR}")
     print(f"ALIGN_MODE:      {ALIGN_MODE}")
@@ -337,12 +334,12 @@ def main():
     obs, var = build_metadata(barcodes, features, unique_mat, multi_mat)
     manifest = build_manifest(barcodes, features, unique_mat, multi_mat, merge_mat)
 
-    save_aligned_npz(barcodes, features, obs, var, unique_mat, multi_mat, merge_mat, manifest)
+    save_raw_exp(barcodes, features, obs, var, unique_mat, multi_mat, merge_mat, manifest)
     h5ad_file = save_h5ad(obs, var, unique_mat, multi_mat, merge_mat, manifest)
 
     print("=" * 90)
     print("Done.")
-    print(f"Aligned NPZ dir: {ALIGNED_NPZ_DIR}")
+    print(f"Raw expression dir: {RAW_EXP_DIR}")
     print(f"H5AD file:       {h5ad_file}")
     print("=" * 90)
 
