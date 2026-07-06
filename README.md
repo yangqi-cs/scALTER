@@ -4,7 +4,7 @@
 scALTER is a framework for single-cell TE expression reconstruction and latent representation learning.
 
 <div align="center">
-<img src="figures/workflow.png" width="90%">
+<img src="figures/workflow.png" width="100%">
 </div>
 
 ## Installation
