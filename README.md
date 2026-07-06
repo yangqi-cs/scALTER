@@ -34,8 +34,8 @@ conda activate scALTER
 Run the full scALTER pipeline, including count extraction, view construction, and model training. Required inputs:
 
 ```text
---bam                  Input alignment file in BAM format
---whitelist            Cell barcode whitelist, usually filtered barcodes.tsv
+--bam                  Input .bam file, or a text file listing .bam paths
+--whitelist            Cell barcode whitelist file, or a matching whitelist path list
 --te-annotation-gtf    TE annotation file in GTF format
 ```
 
@@ -95,13 +95,24 @@ python scripts/scALTER.py \
   --learning-rate 1e-3
 ```
 
+For multiple BAM files, provide one text file for `--bam` and one matching text file for `--whitelist`.
+Each line in the whitelist list corresponds to the BAM path on the same line:
+
+```bash
+python scripts/scALTER.py \
+  --bam /path/to/bam_list.txt \
+  --whitelist /path/to/whitelist_list.txt \
+  --te-annotation-gtf /path/to/te_annotation.gtf
+```
+
 By default, scALTER writes results under:
 
 ```text
 /qiyang/GitHub/scALTER/results/
 ```
 
-Temporary count and overlap files are written under `results/tmp/` during the run.
+Intermediate count TSV files are retained under `results/tmp/counts/` after the run.
+Temporary overlap files are written under `results/tmp/bedtools/` and are removed unless `--keep-count-tmp` is used.
 
 The main output files include:
 

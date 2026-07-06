@@ -202,9 +202,16 @@ def build_metadata(barcodes, features, unique_mat, multi_mat):
     obs = pd.DataFrame(index=barcodes.astype(str))
     obs.index.name = "barcode"
     obs["barcode"] = obs.index.astype(str)
-    obs["barcode_core"] = obs["barcode"].str.replace(r"-\d+$", "", regex=True)
-    obs["batch"] = SAMPLE_NAME
-    obs["sample"] = SAMPLE_NAME
+    barcode_parts = obs["barcode"].str.split(":", n=1, expand=True)
+    has_sample_prefix = barcode_parts.shape[1] == 2
+    if has_sample_prefix:
+        obs["sample"] = barcode_parts[0].astype(str)
+        barcode_without_sample = barcode_parts[1].astype(str)
+    else:
+        obs["sample"] = SAMPLE_NAME
+        barcode_without_sample = obs["barcode"]
+    obs["barcode_core"] = barcode_without_sample.str.replace(r"-\d+$", "", regex=True)
+    obs["batch"] = obs["sample"]
     obs["unique_counts"] = np.asarray(unique_mat.sum(axis=1)).ravel().astype(DTYPE)
     obs["multi_counts"] = np.asarray(multi_mat.sum(axis=1)).ravel().astype(DTYPE)
     obs["total_counts"] = obs["unique_counts"] + obs["multi_counts"]

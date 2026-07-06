@@ -35,17 +35,56 @@ def run_step(step_name, cmd):
     subprocess.run(cmd, check=True)
 
 
+def read_path_list(list_file):
+    list_file = Path(list_file)
+    if not list_file.exists():
+        raise FileNotFoundError(f"Input list file does not exist: {list_file}")
+
+    paths = []
+    with list_file.open() as handle:
+        for line in handle:
+            item = line.strip()
+            if not item or item.startswith("#"):
+                continue
+            path = Path(item)
+            if not path.is_absolute():
+                path = list_file.parent / path
+            paths.append(path)
+
+    if not paths:
+        raise ValueError(f"Input list file is empty: {list_file}")
+    return paths
+
+
+def resolve_bam_whitelist_pairs(bam_arg, whitelist_arg):
+    bam_path = Path(bam_arg)
+    whitelist_path = Path(whitelist_arg)
+
+    if str(bam_path).lower().endswith(".bam"):
+        pairs = [(bam_path, whitelist_path)]
+    else:
+        bam_paths = read_path_list(bam_path)
+        whitelist_paths = read_path_list(whitelist_path)
+        if len(bam_paths) != len(whitelist_paths):
+            raise ValueError(
+                "--bam and --whitelist list files must contain the same number "
+                f"of entries: {len(bam_paths)} BAMs vs {len(whitelist_paths)} whitelists"
+            )
+        pairs = list(zip(bam_paths, whitelist_paths))
+
+    for bam, whitelist in pairs:
+        if bam.suffix.lower() != ".bam":
+            raise ValueError(f"Each --bam entry must point to a .bam file: {bam}")
+        if not bam.exists():
+            raise FileNotFoundError(f"BAM file does not exist: {bam}")
+        if not whitelist.exists():
+            raise FileNotFoundError(f"Whitelist file does not exist: {whitelist}")
+    return pairs
+
+
 def validate_input_files(args):
-    bam = Path(args.bam)
-    whitelist = Path(args.whitelist)
     te_gtf = Path(args.te_annotation_gtf)
 
-    if bam.suffix.lower() != ".bam":
-        raise ValueError(f"--bam must point to a .bam file: {bam}")
-    if not bam.exists():
-        raise FileNotFoundError(f"BAM file does not exist: {bam}")
-    if not whitelist.exists():
-        raise FileNotFoundError(f"Whitelist file does not exist: {whitelist}")
     if not (
         str(te_gtf).endswith(".gtf")
         or str(te_gtf).endswith(".gtf.gz")
@@ -61,34 +100,35 @@ def validate_input_files(args):
             "pysam is required to validate BAM files before running scALTER."
         ) from exc
 
-    found_cell_tag = False
-    found_umi_tag = False
-    inspected = 0
-    max_reads = 100000
-    with pysam.AlignmentFile(str(bam), "rb") as bam_file:
-        for read in bam_file.fetch(until_eof=True):
-            if read.is_unmapped:
-                continue
-            inspected += 1
-            found_cell_tag = found_cell_tag or read.has_tag(args.cell_tag)
-            found_umi_tag = found_umi_tag or read.has_tag(args.umi_tag)
-            if found_cell_tag and found_umi_tag:
-                break
-            if inspected >= max_reads:
-                break
+    for bam, _whitelist in resolve_bam_whitelist_pairs(args.bam, args.whitelist):
+        found_cell_tag = False
+        found_umi_tag = False
+        inspected = 0
+        max_reads = 100000
+        with pysam.AlignmentFile(str(bam), "rb") as bam_file:
+            for read in bam_file.fetch(until_eof=True):
+                if read.is_unmapped:
+                    continue
+                inspected += 1
+                found_cell_tag = found_cell_tag or read.has_tag(args.cell_tag)
+                found_umi_tag = found_umi_tag or read.has_tag(args.umi_tag)
+                if found_cell_tag and found_umi_tag:
+                    break
+                if inspected >= max_reads:
+                    break
 
-    if inspected == 0:
-        raise ValueError(f"No mapped reads were found while checking BAM: {bam}")
-    missing = []
-    if not found_cell_tag:
-        missing.append(args.cell_tag)
-    if not found_umi_tag:
-        missing.append(args.umi_tag)
-    if missing:
-        raise ValueError(
-            "Could not find required BAM tag(s) in the first "
-            f"{inspected} mapped reads: {', '.join(missing)}"
-        )
+        if inspected == 0:
+            raise ValueError(f"No mapped reads were found while checking BAM: {bam}")
+        missing = []
+        if not found_cell_tag:
+            missing.append(args.cell_tag)
+        if not found_umi_tag:
+            missing.append(args.umi_tag)
+        if missing:
+            raise ValueError(
+                f"Could not find required BAM tag(s) in {bam} within the first "
+                f"{inspected} mapped reads: {', '.join(missing)}"
+            )
 
 
 def build_arg_parser():
@@ -106,12 +146,12 @@ def build_arg_parser():
     parser.add_argument(
         "--bam",
         required=True,
-        help="Input alignment file in BAM format.",
+        help="Input .bam file, or a text file listing .bam paths.",
     )
     parser.add_argument(
         "--whitelist",
         required=True,
-        help="Cell barcode whitelist, usually the filtered 10x barcodes.tsv file.",
+        help="Cell barcode whitelist file, or a matching text file listing whitelist paths when --bam is a list.",
     )
     parser.add_argument(
         "--te-annotation-gtf",
@@ -221,9 +261,6 @@ def main():
             "--align-mode", args.align_mode,
         ]
         run_step("Step 2/3: building aligned input views", cmd)
-
-    if not args.keep_count_tmp and count_tmp_dir.exists():
-        shutil.rmtree(count_tmp_dir)
 
     if not args.skip_model:
         cmd = [

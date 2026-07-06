@@ -131,13 +131,14 @@ def bam_has_index(bam_file):
     return any(os.path.exists(path) for path in candidates)
 
 
-def prepare_indexed_bam(bam_file, tmp_dir, samtools, threads):
+def prepare_indexed_bam(bam_file, tmp_dir, samtools, threads, link_name=None):
     if bam_has_index(bam_file):
         return bam_file
 
     index_dir = os.path.join(tmp_dir, "bam_index")
     os.makedirs(index_dir, exist_ok=True)
-    linked_bam = os.path.join(index_dir, os.path.basename(bam_file))
+    link_basename = f"{link_name}.bam" if link_name else os.path.basename(bam_file)
+    linked_bam = os.path.join(index_dir, link_basename)
     if os.path.lexists(linked_bam):
         os.remove(linked_bam)
     os.symlink(os.path.abspath(bam_file), linked_bam)
@@ -268,6 +269,83 @@ def discover_samples(input_dir, barcode_dir):
         )
 
     return samples, skipped
+
+
+def read_path_list(list_file):
+    list_file = os.path.abspath(list_file)
+    if not os.path.exists(list_file):
+        raise FileNotFoundError(list_file)
+
+    paths = []
+    base_dir = os.path.dirname(list_file)
+    with open(list_file) as handle:
+        for line in handle:
+            item = line.strip()
+            if not item or item.startswith("#"):
+                continue
+            if not os.path.isabs(item):
+                item = os.path.join(base_dir, item)
+            paths.append(os.path.abspath(item))
+
+    if not paths:
+        raise ValueError(f"Input list file is empty: {list_file}")
+    return paths
+
+
+def make_unique_sample_name(bam_file, used_names, index):
+    base = os.path.basename(bam_file)
+    if base.lower().endswith(".bam"):
+        base = base[:-4]
+    name = re.sub(r"[^A-Za-z0-9_.-]+", "_", base).strip("._-")
+    if not name:
+        name = f"sample{index + 1}"
+
+    unique_name = name
+    counter = 2
+    while unique_name in used_names:
+        unique_name = f"{name}_{counter}"
+        counter += 1
+    used_names.add(unique_name)
+    return unique_name
+
+
+def build_samples_from_args(bam_arg, whitelist_arg):
+    if bam_arg.lower().endswith(".bam"):
+        bam_files = [os.path.abspath(bam_arg)]
+        whitelist_files = [os.path.abspath(whitelist_arg)]
+        prefix_cells = False
+    else:
+        bam_files = read_path_list(bam_arg)
+        whitelist_files = read_path_list(whitelist_arg)
+        if len(bam_files) != len(whitelist_files):
+            raise ValueError(
+                "--bam and --whitelist list files must contain the same number "
+                f"of entries: {len(bam_files)} BAMs vs {len(whitelist_files)} whitelists"
+            )
+        prefix_cells = len(bam_files) > 1
+
+    used_names = set()
+    samples = []
+    for index, (bam_file, whitelist_file) in enumerate(zip(bam_files, whitelist_files)):
+        if not bam_file.lower().endswith(".bam"):
+            raise ValueError(f"Each --bam entry must point to a .bam file: {bam_file}")
+        if not os.path.exists(bam_file):
+            raise FileNotFoundError(bam_file)
+        if not os.path.exists(whitelist_file):
+            raise FileNotFoundError(whitelist_file)
+
+        sample_name = make_unique_sample_name(bam_file, used_names, index)
+        samples.append(
+            {
+                "name": sample_name,
+                "prefix": sample_name,
+                "bam_file": bam_file,
+                "barcode_file": whitelist_file,
+                "prefix_cells": prefix_cells,
+            }
+        )
+
+    return samples
 
 
 def shell_quote(path):
@@ -495,16 +573,23 @@ def reduce_hit_file(
         stats["hit_alignments"] += 1
 
 
-def write_long_tsv(output_file, counts, float_values=False):
+def format_cell_id(cell, cell_prefix=None):
+    if cell_prefix:
+        return f"{cell_prefix}:{cell}"
+    return cell
+
+
+def write_long_tsv(output_file, counts, float_values=False, cell_prefix=None):
     with open(output_file, "w", buffering=1024 * 1024) as out:
         lines = []
         for cell in sorted(counts.keys()):
+            out_cell = format_cell_id(cell, cell_prefix=cell_prefix)
             for te in sorted(counts[cell].keys()):
                 value = counts[cell][te]
                 if float_values:
-                    lines.append(f"{cell}\t{te}\t{value:.4f}\n")
+                    lines.append(f"{out_cell}\t{te}\t{value:.4f}\n")
                 else:
-                    lines.append(f"{cell}\t{te}\t{value}\n")
+                    lines.append(f"{out_cell}\t{te}\t{value}\n")
                 if len(lines) >= 10000:
                     out.writelines(lines)
                     lines = []
@@ -515,8 +600,8 @@ def write_long_tsv(output_file, counts, float_values=False):
 def reduce_sample(args):
     sample, hit_files, output_dir, enable_umi_dedup, skip_existing = args
     sample_name = sample["name"]
-    unique_output = os.path.join(output_dir, "unique.tsv")
-    multi_output = os.path.join(output_dir, "multi.tsv")
+    unique_output = os.path.join(output_dir, f"{sample['prefix']}.unique.tsv")
+    multi_output = os.path.join(output_dir, f"{sample['prefix']}.multi.tsv")
 
     if (
         skip_existing
@@ -558,8 +643,19 @@ def reduce_sample(args):
             )
 
     os.makedirs(output_dir, exist_ok=True)
-    write_long_tsv(unique_output, unique_counts, float_values=False)
-    write_long_tsv(multi_output, multi_counts, float_values=True)
+    cell_prefix = sample_name if sample.get("prefix_cells") else None
+    write_long_tsv(
+        unique_output,
+        unique_counts,
+        float_values=False,
+        cell_prefix=cell_prefix,
+    )
+    write_long_tsv(
+        multi_output,
+        multi_counts,
+        float_values=True,
+        cell_prefix=cell_prefix,
+    )
 
     stats["unique_cells"] = len(unique_counts)
     stats["multi_cells"] = len(multi_counts)
@@ -581,6 +677,27 @@ def reduce_sample(args):
         "stats": stats,
         "elapsed_time": elapsed,
     }
+
+
+def concatenate_outputs(reduce_results, output_dir):
+    combined = {
+        "unique": os.path.join(output_dir, "unique.tsv"),
+        "multi": os.path.join(output_dir, "multi.tsv"),
+    }
+    source_keys = {
+        "unique": "unique_file",
+        "multi": "multi_file",
+    }
+
+    for kind, output_file in combined.items():
+        with open(output_file, "w", buffering=1024 * 1024) as out:
+            for result in reduce_results:
+                source_file = result[source_keys[kind]]
+                if not os.path.exists(source_file):
+                    continue
+                with open(source_file) as source:
+                    shutil.copyfileobj(source, out)
+    return combined
 
 
 def signal_handler(sig, frame):
@@ -658,62 +775,63 @@ def main():
     print("=" * 80)
     print("Fast 10x U/M TE counting")
     print("=" * 80)
-    print(f"Sample:          {SAMPLE_NAME}")
-    print(f"BAM:             {args.bam}")
-    print(f"Whitelist:       {args.whitelist}")
+    print(f"BAM input:       {args.bam}")
+    print(f"Whitelist input: {args.whitelist}")
     print(f"GTF:             {gtf_file}")
     print(f"Output dir:      {output_dir}")
     print(f"Temporary dir:   {tmp_dir}")
     print(f"Threads:         {threads}")
     print()
 
-    for path in (args.bam, args.whitelist, gtf_file):
-        if not os.path.exists(path):
-            raise FileNotFoundError(path)
+    if not os.path.exists(gtf_file):
+        raise FileNotFoundError(gtf_file)
+    samples = build_samples_from_args(args.bam, args.whitelist)
 
-    samples = [
-        {
-            "name": SAMPLE_NAME,
-            "prefix": SAMPLE_NAME,
-            "bam_file": args.bam,
-            "barcode_file": args.whitelist,
-        }
-    ]
-
-    completed_samples = []
+    completed_results = []
     active_samples = []
     for sample in samples:
-        unique_output = os.path.join(output_dir, "unique.tsv")
-        multi_output = os.path.join(output_dir, "multi.tsv")
+        unique_output = os.path.join(output_dir, f"{sample['prefix']}.unique.tsv")
+        multi_output = os.path.join(output_dir, f"{sample['prefix']}.multi.tsv")
         if (
             args.skip_existing
             and os.path.exists(unique_output)
             and os.path.exists(multi_output)
         ):
-            completed_samples.append(sample)
+            completed_results.append(
+                {
+                    "success": True,
+                    "prefix": sample["prefix"],
+                    "sample": sample["name"],
+                    "skipped": True,
+                    "unique_file": unique_output,
+                    "multi_file": multi_output,
+                }
+            )
         else:
             active_samples.append(sample)
     samples = active_samples
 
-    print(f"Prepared {len(samples)} sample")
-    if completed_samples:
+    print(f"Prepared {len(active_samples) + len(completed_results)} sample(s)")
+    if completed_results:
         print(
-            f"Skipped {len(completed_samples)} samples with existing U/M outputs: "
-            + ", ".join(s["name"] for s in completed_samples)
+            f"Skipped {len(completed_results)} samples with existing U/M outputs: "
+            + ", ".join(r["sample"] for r in completed_results)
         )
     print()
 
     if not samples:
-        print("All requested samples already have outputs. Nothing to do.")
+        concatenate_outputs(completed_results, output_dir)
+        print("All requested samples already have outputs.")
         return
 
-    indexed_bam = prepare_indexed_bam(
-        samples[0]["bam_file"],
-        tmp_dir,
-        samtools,
-        threads,
-    )
-    samples[0]["bam_file"] = indexed_bam
+    for sample in samples:
+        sample["bam_file"] = prepare_indexed_bam(
+            sample["bam_file"],
+            tmp_dir,
+            samtools,
+            threads,
+            link_name=sample["prefix"],
+        )
 
     valid_chroms = get_bam_chromosomes(samples[0]["bam_file"])
     chrom_order = get_bam_chrom_order(samples[0]["bam_file"])
@@ -783,9 +901,10 @@ def main():
         for sample in samples
     ]
     with Pool(processes=min(reducer_threads, len(reduce_args))) as pool:
-        reduce_results = pool.map(reduce_sample, reduce_args)
+        reduce_results = completed_results + pool.map(reduce_sample, reduce_args)
     phase_elapsed = timedelta(seconds=int(time.time() - phase_start))
     print(f"  Reduction done in {phase_elapsed}")
+    concatenate_outputs(reduce_results, output_dir)
     print()
 
     successful = sum(1 for r in reduce_results if r.get("success"))
