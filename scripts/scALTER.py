@@ -138,8 +138,8 @@ def build_arg_parser():
 
     parser.add_argument("--count-likelihood", choices=["nb", "zinb"], default="nb")
     parser.add_argument("--n-hidden", type=int, default=128)
-    parser.add_argument("--n-latent", type=int, default=32)
     parser.add_argument("--n-layers", type=int, default=1)
+    parser.add_argument("--n-latent", type=int, default=32)
     parser.add_argument("--dropout-rate", type=float, default=0.0)
     parser.add_argument("--kl-weight", type=float, default=0.00001)
     parser.add_argument("--learning-rate", type=float, default=1e-3)
@@ -225,8 +225,8 @@ def main():
             "--latent-dir", str_path(latent_dir),
             "--count-likelihood", args.count_likelihood,
             "--n-hidden", str(args.n_hidden),
-            "--n-latent", str(args.n_latent),
             "--n-layers", str(args.n_layers),
+            "--n-latent", str(args.n_latent),
             "--dropout-rate", str(args.dropout_rate),
             "--kl-weight", str(args.kl_weight),
             "--learning-rate", str(args.learning_rate),

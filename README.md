@@ -46,12 +46,10 @@ Common options:
 --cell-tag             BAM tag for cell barcodes. Default: CB
 --umi-tag              BAM tag for UMIs. Default: UB
 --threads              Threads for count extraction. Default: 32
---reducer-threads      Threads for count table reduction. Default: 1
---align-mode           Matrix alignment mode. Default: union
 --count-likelihood     Count likelihood, nb or zinb. Default: nb
 --n-hidden             Hidden dimension. Default: 128
---n-latent             Latent dimension. Default: 32
 --n-layers             Number of neural network layers. Default: 1
+--n-latent             Latent dimension. Default: 32
 --dropout-rate         Dropout rate. Default: 0.0
 --kl-weight            KL loss weight. Default: 1e-5
 --learning-rate        Learning rate. Default: 1e-3
@@ -89,9 +87,9 @@ python scripts/scALTER.py \
   --whitelist /path/to/barcodes.tsv \
   --te-annotation-gtf /path/to/te_annotation.gtf \
   --threads 48 \
-  --reducer-threads 2 \
   --count-likelihood nb \
   --epochs 300 \
+  --n-layers 1 \
   --n-latent 32 \
   --batch-size 128 \
   --learning-rate 1e-3
