@@ -1,7 +1,7 @@
 # scALTER
 
 ## Introduction
-scALTER is a framework for transposable element (TE) expression reconstruction and latent representation learning in single-cells.
+scALTER is a framework for transposable element (TE) expression reconstruction and latent representation learning in single cells.
 
 <div align="center">
 <img src="figures/workflow.png" width="95%">
